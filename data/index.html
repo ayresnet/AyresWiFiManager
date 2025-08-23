@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1, viewport-fit=cover"
+  />
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <title>Wi-Fi Setup</title>
+  <style>
+    :root{
+      --bg:#0b1220; --card:#121a2b; --ring:#1b2a4a; --muted:#9fb0cf; --text:#e6efff;
+      --accent:#4cc9f0; --accent2:#4361ee; --ok:#2ec27e; --bad:#ff6b6b;
+      --r:14px;
+    }
+    *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+    html,body{height:100%}
+    body{
+      margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;
+      color:var(--text); background:#0b1220;
+      padding: env(safe-area-inset-top) env(safe-area-inset-right)
+               env(safe-area-inset-bottom) env(safe-area-inset-left);
+    }
+    .app{max-width:520px; margin:0 auto; padding:12px}
+    .header{
+      position:sticky; top:0; z-index:10;
+      background:linear-gradient(180deg, rgba(18,26,43,1), rgba(18,26,43,.85));
+      border:1px solid var(--ring); border-radius:12px; padding:10px 12px; margin-bottom:12px;
+      display:flex; align-items:center; justify-content:space-between; gap:8px;
+      backdrop-filter: blur(6px);
+    }
+    .title{display:flex; align-items:center; gap:10px}
+    /* LOGO con ícono Wi-Fi */
+    .logo{
+      width:28px; height:28px; border-radius:8px;
+      background:linear-gradient(135deg,var(--accent2),var(--accent));
+      position:relative; display:grid; place-items:center;
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,.06);
+    }
+    .logo svg{ width:18px; height:18px }
+    .logo .wifi-icon{ fill:none; stroke:#fff; stroke-width:2; stroke-linecap:round; opacity:.95 }
+
+    .title h1{font-size:16px; margin:0}
+
+    /* chips del header */
+    .badges{display:flex; align-items:center; gap:8px}
+    .badge{
+      font-size:12px; color:#cfe2ff; border:1px dashed var(--ring);
+      border-radius:999px; padding:6px 10px;
+      white-space:nowrap;
+    }
+    .badge.version{
+      border:1px solid transparent;
+      background:
+        linear-gradient(var(--card), var(--card)) padding-box,
+        linear-gradient(135deg,var(--accent2),var(--accent)) border-box;
+      color:#eaf3ff;
+    }
+
+    .card{background:var(--card); border:1px solid var(--ring); border-radius:var(--r); overflow:hidden}
+    .sec{padding:12px}
+    .sec + .sec{border-top:1px solid var(--ring)}
+    .sec h2{margin:0 0 8px 0; font-size:15px}
+
+    /* toolbar */
+    .toolbar{display:flex; gap:8px; align-items:center; flex-wrap:wrap}
+    .input{
+      flex:1 1 160px; min-width:0; width:100%;
+      background:#0e162b; border:1px solid #1e2b4a; color:var(--text);
+      border-radius:10px; padding:10px 12px; font-size:16px; outline:none;
+    }
+    .input:focus{border-color:#385a9b}
+    .btn{
+      appearance:none; border:1px solid #24406c; color:#e7f0ff; background:#0f1830;
+      border-radius:10px; padding:10px 14px; font-size:16px;
+    }
+    .btn.primary{
+      background:linear-gradient(135deg, var(--accent2), var(--accent));
+      border-color:transparent; color:white;
+    }
+    .btn[disabled]{opacity:.6}
+
+    /* list */
+    .list{list-style:none; margin:10px 0 0 0; padding:0; display:grid; gap:8px}
+    .item{
+      display:grid; grid-template-columns: 28px 1fr auto; gap:10px; align-items:center;
+      padding:12px; border:1px solid #1c2c50; border-radius:12px; background:#0f1730; cursor:pointer;
+      touch-action: manipulation;
+    }
+    .item:active{transform:scale(.99)}
+    .item.selected{outline:2px solid #3760b9; background:#0f1c3a}
+    .ssid{font-weight:600; font-size:15px}
+    .meta{font-size:12px; color:var(--muted); margin-top:2px}
+    .lock{font-size:18px}
+    .bars{display:inline-grid; grid-auto-flow:column; gap:2px; align-items:end; height:14px}
+    .bars span{width:3px; background:#26385f; display:block; border-radius:2px}
+    .bars .on{background:#36a2ff}
+
+    /* form */
+    .row{display:flex; gap:10px; align-items:center; margin:10px 0}
+    .row label{min-width:82px; font-size:14px; color:#cbd6ef}
+    .grow{flex:1}
+    .switch{display:flex; align-items:center; gap:8px; font-size:14px; color:#cbd6ef}
+    .hint{font-size:12px; color:var(--muted); margin:6px 0 0 0}
+
+    /* sticky footer button (mobile comfort) */
+    .footer{
+      position:sticky; bottom:0; z-index:10;
+      padding:10px 0 0 0; margin-top:8px;
+      background:linear-gradient(180deg, rgba(11,18,32,0), rgba(11,18,32,1) 40%);
+    }
+    .footer .btn.primary{width:100%}
+    code{background:#0d1426; border:1px solid #223255; padding:2px 6px; border-radius:6px}
+
+    /* COPYRIGHT — margen/padding extra para no quedar tapado en móvil */
+    .copyright{
+      text-align:center; font-size:11px; color:var(--muted);
+      margin:12px 8px 28px;
+      padding-bottom: max(22px, env(safe-area-inset-bottom));
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="header">
+      <div class="title">
+        <div class="logo" aria-hidden="true">
+          <!-- Ícono Wi-Fi -->
+          <svg viewBox="0 0 24 24" class="wifi-icon" aria-hidden="true">
+            <path d="M12 18.5c.7 0 1.25.55 1.25 1.25S12.7 21 12 21s-1.25-.55-1.25-1.25S11.3 18.5 12 18.5z"/>
+            <path d="M8.5 16a6 6 0 0 1 7 0" />
+            <path d="M6 13a9 9 0 0 1 12 0" />
+            <path d="M3.5 10a12 12 0 0 1 17 0" />
+          </svg>
+        </div>
+        <div>
+          <h1>Wi-Fi Manager</h1>
+          <div id="ap-host" class="hint" style="margin:0"></div>
+        </div>
+      </div>
+
+      <!-- chips derecha: Portal + Versión -->
+      <div class="badges">
+        <span class="badge">Portal</span>
+        <span class="badge version" id="ver">v2.0.0</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <section class="sec">
+        <h2>Redes disponibles</h2>
+        <div class="toolbar">
+          <input id="filter" class="input" type="search" placeholder="Filtrar SSID…" inputmode="search" />
+          <button id="btn-scan" class="btn" type="button">Reescanear</button>
+          <label class="switch">
+            <input id="auto" type="checkbox" checked />
+            Auto 6s
+          </label>
+        </div>
+        <div id="status" class="hint" style="margin-top:8px">Escaneando…</div>
+        <ul id="list" class="list" aria-live="polite"></ul>
+        <div id="empty" class="hint" style="display:none">No se encontraron redes. Probá reescanear.</div>
+      </section>
+
+      <section class="sec">
+        <h2>Conectar</h2>
+        <form id="form" method="POST" action="/save" autocomplete="off">
+          <div class="row">
+            <label for="ssid">SSID</label>
+            <input id="ssid" class="input grow" name="ssid" required placeholder="Nombre de la red" />
+          </div>
+
+          <div class="row">
+            <label for="password">Password</label>
+            <input id="password" class="input grow" name="password" type="password" required minlength="8" placeholder="Contraseña" />
+          </div>
+
+          <div class="row">
+            <label></label>
+            <label class="switch"><input id="show" type="checkbox" /> Mostrar contraseña</label>
+          </div>
+
+          <p class="hint">Las credenciales se guardan en el dispositivo y se reinicia para conectar.</p>
+
+          <div class="footer">
+            <button id="btn-save" class="btn primary" type="submit">Guardar y conectar</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="sec">
+        <div class="hint">
+          Si el portal no abre solo, conectate al AP y entrá a <code id="portal-url">http://192.168.4.1</code>.
+        </div>
+      </section>
+    </div>
+
+    <!-- COPYRIGHT con espacio inferior adicional -->
+    <footer class="copyright">© 2025 AyresNet · <span id="ver-footer"></span></footer>
+  </div>
+
+  <script>
+    (function(){
+      const VERSION = "2.0.0"; // <— cambiás esto y listo
+      const vf = document.getElementById('ver-footer');
+      const $ = sel => document.querySelector(sel);
+      const els = {
+        list: $('#list'), empty: $('#empty'), status: $('#status'), filter: $('#filter'),
+        auto: $('#auto'), btnScan: $('#btn-scan'), ssid: $('#ssid'), pass: $('#password'),
+        show: $('#show'), form: $('#form'), btnSave: $('#btn-save'),
+        apHost: $('#ap-host'), portalUrl: $('#portal-url'), ver: $('#ver')
+      };
+
+      // Pintar versión en chip
+      if (els.ver) els.ver.textContent = 'v' + VERSION;
+
+      if (vf) vf.textContent = 'v' + VERSION;
+
+      // Info AP/host
+      els.apHost.textContent = 'AP: ' + (location.hostname || '192.168.4.1');
+      els.portalUrl.textContent = 'http://' + (location.host || '192.168.4.1');
+
+      function rssiLevel(rssi){
+        if (rssi >= -50) return 4;
+        if (rssi >= -60) return 3;
+        if (rssi >= -70) return 2;
+        if (rssi >= -80) return 1;
+        return 0;
+      }
+      function bars(rssi){
+        const wrap = document.createElement('span');
+        wrap.className = 'bars';
+        const lvl = rssiLevel(rssi);
+        for (let i=0;i<5;i++){
+          const b = document.createElement('span');
+          b.style.height = (5 + i*2) + 'px';
+          if (i <= lvl) b.className = 'on';
+          wrap.appendChild(b);
+        }
+        return wrap;
+      }
+
+      function dedupeBest(list){
+        const best=new Map();
+        for (const it of list){
+          if (!it || !it.ssid) continue;
+          const cur=best.get(it.ssid);
+          if (!cur || it.rssi > cur.rssi) best.set(it.ssid,it);
+        }
+        return Array.from(best.values());
+      }
+
+      function render(list){
+        const q=(els.filter.value||'').toLowerCase().trim();
+        let arr = dedupeBest(list).sort((a,b)=>b.rssi-a.rssi);
+        if (q) arr = arr.filter(n => n.ssid.toLowerCase().includes(q));
+
+        els.list.innerHTML='';
+        if (!arr.length){
+          els.empty.style.display='block';
+          return;
+        }
+        els.empty.style.display='none';
+
+        for (const n of arr){
+          const li=document.createElement('li');
+          li.className='item';
+          li.dataset.ssid=n.ssid;
+          li.dataset.secure = !!n.secure;
+
+          const lock=document.createElement('span'); lock.className='lock'; lock.textContent=n.secure?'🔒':'🔓';
+          const name=document.createElement('div'); name.innerHTML=`<div class="ssid">${n.ssid}</div><div class="meta">${n.rssi} dBm</div>`;
+          const sig=bars(n.rssi);
+
+          li.appendChild(lock); li.appendChild(name); li.appendChild(sig);
+          els.list.appendChild(li);
+        }
+      }
+
+      let lastScan=[]; let timer=null;
+
+      async function scan(){
+        try{
+          els.btnScan.disabled=true;
+          els.status.textContent='Escaneando…';
+          let resp = await fetch('/scan', {cache:'no-store'});
+          if (!resp.ok) throw new Error('HTTP '+resp.status);
+          let data = await resp.json();
+          if (!Array.isArray(data)) data = (data && data.networks) || [];
+          lastScan = data;
+          render(lastScan);
+          els.status.textContent = `Listo. ${lastScan.length} redes`;
+        }catch(e){
+          console.error(e);
+          els.status.textContent='Error al escanear. Reintentá.';
+        }finally{
+          els.btnScan.disabled=false;
+        }
+        if (els.auto.checked){
+          timer = setTimeout(scan, 6000);
+        }
+      }
+
+      function stopAuto(){ if (timer){ clearTimeout(timer); timer=null; } }
+
+      // Interacciones
+      els.btnScan.addEventListener('click', ()=>{ stopAuto(); scan(); });
+      els.filter.addEventListener('input', ()=> render(lastScan));
+      els.auto.addEventListener('change', ()=>{ stopAuto(); if (els.auto.checked) scan(); });
+
+      els.list.addEventListener('click', (ev)=>{
+        const li = ev.target.closest('.item'); if (!li) return;
+        [...els.list.children].forEach(n=> n.classList.remove('selected'));
+        li.classList.add('selected');
+        els.ssid.value = li.dataset.ssid || '';
+        els.pass.focus();
+      });
+
+      els.show.addEventListener('change', ()=>{ els.pass.type = els.show.checked?'text':'password'; });
+
+      els.form.addEventListener('submit', ()=>{
+        els.btnSave.disabled=true;
+        els.btnSave.textContent='Guardando…';
+      });
+
+      // Primer ciclo
+      scan();
+    })();
+  </script>
+</body>
+</html>
