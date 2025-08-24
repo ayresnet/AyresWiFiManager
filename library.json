@@ -1,7 +1,7 @@
 {
-  "name": "AyresWiFiManager",
+  "name": "AyresWiFiManager (AWM)",
   "version": "2.0.0",
-  "description": "Wi-Fi manager pro para ESP32/ESP8266 con portal cautivo, credenciales en LittleFS, botón 2–5s/≥5s, NTP y LED por estados.",
+  "description": "AWM: Wi-Fi manager pro para ESP32/ESP8266 con portal cautivo, credenciales en LittleFS, botón 2–5s/≥5s, NTP y LED por estados.",
   "keywords": "wifi, captive-portal, esp32, esp8266, littlefs, dns, webserver, ntp",
   "authors": [
     { "name": "Daniel Salgado", "maintainer": true, "url": "https://github.com/ayresnet" },

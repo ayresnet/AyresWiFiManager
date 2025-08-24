@@ -1,6 +1,33 @@
-# AyresWiFiManager
+<div align="center">
 
-**Gestor Wi‑Fi “pro” para ESP32/ESP8266** con portal cautivo real (AP+DNS), UI moderna servida desde **LittleFS**, almacenamiento seguro de credenciales, **políticas de fallback**, botón de provisión, LED de estado, **NTP**, chequeo de Internet y **logging** configurable.
+# AyresWiFiManager (AWM)
+
+<!-- Línea 1: identidad y estado del proyecto -->
+![AWM](https://img.shields.io/badge/AWM-Portal%20Cautivo-4361ee?style=flat-square)
+![Release](https://img.shields.io/github/v/release/ayresnet/AyresWiFiManager?include_prereleases&label=release&style=flat-square)
+![License](https://img.shields.io/github/license/ayresnet/AyresWiFiManager?style=flat-square)
+![Issues](https://img.shields.io/github/issues/ayresnet/AyresWiFiManager?style=flat-square)
+
+<!-- Línea 2: plataformas y frameworks -->
+![ESP32](https://img.shields.io/badge/ESP32-supported-2ec27e?logo=espressif&logoColor=white&style=flat-square)
+![ESP8266](https://img.shields.io/badge/ESP8266-supported-2ec27e?logo=espressif&logoColor=white&style=flat-square)
+![Arduino](https://img.shields.io/badge/Arduino-Library-00979D?logo=arduino&logoColor=white&style=flat-square)
+![PlatformIO](https://img.shields.io/badge/PlatformIO-ready-f5822a?logo=platformio&logoColor=white&style=flat-square)
+
+<!-- Línea 3: características clave -->
+![LittleFS](https://img.shields.io/badge/LittleFS-OK-2ec27e?style=flat-square)
+![Captive Portal](https://img.shields.io/badge/Captive%20Portal-ON-4361ee?style=flat-square)
+![DNS catch-all](https://img.shields.io/badge/DNS-catch--all-4cc9f0?style=flat-square)
+![NTP](https://img.shields.io/badge/NTP-sync-4cc9f0?style=flat-square)
+![ArduinoJson](https://img.shields.io/badge/ArduinoJson-%5E6.21.2-6c757d?logo=json&logoColor=white&style=flat-square)
+
+<!-- (Opcional) métricas -->
+<!-- ![Downloads](https://img.shields.io/github/downloads/ayresnet/AyresWiFiManager/total?style=flat-square) -->
+
+</div>
+
+
+**AWM - Gestor Wi‑Fi “pro” para ESP32/ESP8266** con portal cautivo real (AP+DNS), UI moderna servida desde **LittleFS**, almacenamiento seguro de credenciales, **políticas de fallback**, botón de provisión, LED de estado, **NTP**, chequeo de Internet y **logging** configurable.
 
 > Proyecto: https://github.com/AyresNet/AyresWiFiManager  
 > Licencia: MIT — (c) 2025 AyresNet
