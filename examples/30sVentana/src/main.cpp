@@ -15,12 +15,10 @@
 
 #include <Arduino.h>
 #include "AyresWiFiManager.h"
-#include "AyresShell.h"
 #include "AWM_Logging.h"   // ← macros de log AWM_LOG*
 
 // ───────── Objetos ─────────────────────────────────────────────
 AyresWiFiManager wifiManager;   // LED=2, BTN=0 (por defecto)
-AyresShell       shell;
 
 // ───────── Configuración de portales ───────────────────────────
 static const uint32_t BOOT_PORTAL_S   = 30;   // 30 s de INACTIVIDAD (solo si hay credenciales)
@@ -32,7 +30,6 @@ static const uint32_t NET_CHECK_MS = 30000;   // 30 s
 void setup() {
   Serial.begin(115200);
   delay(200);
-  shell.begin();
 
   AWM_LOGI("==== AyresWiFiManager (pro) ====");
 
@@ -114,7 +111,6 @@ void setup() {
 }
 
 void loop() {
-  shell.handleInput();
   wifiManager.update();
 
   const bool wifiOk = wifiManager.isConnected();

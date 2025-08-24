@@ -29,11 +29,9 @@
 
 #include <Arduino.h>
 #include "AyresWiFiManager.h"
-#include "AyresShell.h"
 
 // ───────── Objetos ─────────────────────────────────────────────
 AyresWiFiManager wifiManager;   // LED=2, BTN=0 (por defecto)
-AyresShell       shell;
 
 // ───────── Estado/log periódico ────────────────────────────────
 static uint32_t lastNetCheck = 0;
@@ -42,7 +40,6 @@ static const uint32_t NET_CHECK_MS = 30000;  // 30 s
 void setup() {
   Serial.begin(115200);
   delay(200);
-  shell.begin();
 
   Serial.println();
   Serial.println("==== AyresWiFiManager (pro) ====");
@@ -103,9 +100,6 @@ void setup() {
 }
 
 void loop() {
-  // (si usás tu consola interactiva)
-  shell.handleInput();
-
   // Atiende HTTP + DNS del portal (si está activo) y maneja timeout
   wifiManager.update();
 
