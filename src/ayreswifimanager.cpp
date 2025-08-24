@@ -47,6 +47,7 @@
 
 #include "AyresWiFiManager.h"
 #include <ArduinoJson.h>
+#include "AWM_Logging.h"
 
 #if defined(ESP32)
   #include <HTTPClient.h>
@@ -112,7 +113,7 @@ void AyresWiFiManager::begin() {
 #else
   if (!LittleFS.begin()) {
 #endif
-    Serial.println("❌ Error montando LittleFS");
+    AWM_LOGE("❌ Error montando LittleFS");
     return;
   }
 
@@ -121,7 +122,7 @@ void AyresWiFiManager::begin() {
 
 void AyresWiFiManager::run() {
   // Ventana para detectar hold con feedback LED
-  Serial.println("🔔 Botón: 2–5s abre portal | ≥5s borra credenciales");
+  AWM_LOGI("🔔 Botón: 2–5s abre portal | ≥5s borra credenciales");
 
   unsigned long startTime = millis();
   bool pressed = false;
@@ -139,7 +140,7 @@ void AyresWiFiManager::run() {
       unsigned long held = millis() - t0;
       if (held >= 5000) {
         setLedPatternManual(LedPattern::BLINK_TRIPLE);
-        Serial.println("🩹 Hold ≥5s → borrar credenciales y reiniciar");
+        AWM_LOGW("🩹 Hold ≥5s → borrar credenciales y reiniciar");
         eraseCredentials();
         delay(900);
         ESP.restart();
@@ -152,7 +153,7 @@ void AyresWiFiManager::run() {
     }
     unsigned long held = millis() - t0;
     if (held >= 2000 && held < 5000 && allowButtonPortal) {
-      Serial.println("🟢 Hold 2–5s → abrir portal");
+      AWM_LOGI("🟢 Hold 2–5s → abrir portal");
       setLedAuto(true);
       startPortal();
       return;
@@ -162,7 +163,7 @@ void AyresWiFiManager::run() {
 
   // Conectar si hay credenciales
   if (connectToWiFi()) {
-    Serial.println("✅ Conexión WiFi exitosa.");
+    AWM_LOGI("✅ Conexión WiFi exitosa.");
     sincronizarHoraNTP();
     ledSet(LedPattern::ON);
     connected = true;
@@ -172,25 +173,25 @@ void AyresWiFiManager::run() {
   // No conectó → actuar según política
   switch (fallbackPolicy) {
     case FallbackPolicy::ON_FAIL:
-      Serial.println("🟡 Conexión fallida → abriendo portal (policy=ON_FAIL)");
+      AWM_LOGI("🟡 Conexión fallida → abriendo portal (policy=ON_FAIL)");
       startPortal();
       break;
     case FallbackPolicy::NO_CREDENTIALS_ONLY:
       if (!tieneCredenciales()) {
-        Serial.println("🟡 Sin credenciales → abriendo portal");
+        AWM_LOGI("🟡 Sin credenciales → abriendo portal");
         startPortal();
       } else {
-        Serial.println("🟠 Con credenciales → NO abrir portal (NO_CREDENTIALS_ONLY)");
+        AWM_LOGI("🟠 Con credenciales → NO abrir portal (NO_CREDENTIALS_ONLY)");
       }
       break;
     case FallbackPolicy::SMART_RETRIES:
-      Serial.println("🟠 SMART_RETRIES activo → sin portal por ahora; se abrirá si fallan varios intentos");
+      AWM_LOGI("🟠 SMART_RETRIES activo → sin portal por ahora; se abrirá si fallan varios intentos");
       break;
     case FallbackPolicy::BUTTON_ONLY:
-      Serial.println("🟠 BUTTON_ONLY → no abrir portal automáticamente");
+      AWM_LOGI("🟠 BUTTON_ONLY → no abrir portal automáticamente");
       break;
     case FallbackPolicy::NEVER:
-      Serial.println("🟠 NEVER → no abrir portal automáticamente");
+      AWM_LOGI("🟠 NEVER → no abrir portal automáticamente");
       break;
   }
 }
@@ -204,7 +205,7 @@ void AyresWiFiManager::update() {
   ledTask();
 
   if (portalActive && portalHasTimedOut()) {
-    Serial.println("⏳ Portal tiempo agotado → cerrando");
+    AWM_LOGW("⏳ Portal tiempo agotado → cerrando");
     stopPortal();
   }
 }
@@ -229,8 +230,10 @@ void AyresWiFiManager::setupHTTPRoutes(){
   server.on("/scan",      std::bind(&AyresWiFiManager::handleScan, this));
   server.on("/scan.json", std::bind(&AyresWiFiManager::handleScan, this));
 
+  // NUEVO: borrar credenciales vía POST /erase
+  server.on("/erase", HTTP_POST, std::bind(&AyresWiFiManager::handleErase, this));
+
   // Rutas de detección de conectividad: forzar portal
-    // Sólo si el modo cautivo está ON, forzamos los portales del SO
   if (captiveEnabled) {
     server.on("/generate_204",        [this](){ redirectToRoot(); }); // Android
     server.on("/gen_204",             [this](){ redirectToRoot(); }); // Android alt
@@ -265,7 +268,7 @@ void AyresWiFiManager::setupAP() {
 #if defined(ESP32)
   if (hostname.length()) WiFi.softAPsetHostname(hostname.c_str());
 #endif
-  Serial.printf("📡 AP: %s | IP %s\n", apSSID.c_str(), apIP.toString().c_str());
+  AWM_LOGI("📡 AP: %s | IP %s", apSSID.c_str(), apIP.toString().c_str());
 }
 
 void AyresWiFiManager::startPortal(){
@@ -281,7 +284,7 @@ void AyresWiFiManager::startPortal(){
   portalActive    = true;
   portalStart     = millis();
   lastHttpAccess  = portalStart;
-  Serial.println("🌐 Portal cautivo activo en 192.168.4.1 (GET /, /scan, POST /save)");
+  AWM_LOGI("🌐 Portal cautivo activo en 192.168.4.1 (GET /, /scan, POST /save, POST /erase)");
   ledSet(LedPattern::BLINK_SLOW);
 }
 
@@ -295,7 +298,7 @@ void AyresWiFiManager::stopPortal(){
   if (!ssid.isEmpty()) WiFi.mode(WIFI_STA);
   else                 WiFi.mode(WIFI_OFF);
 
-  Serial.println("✅ Portal cautivo detenido");
+  AWM_LOGI("✅ Portal cautivo detenido");
 }
 
 bool AyresWiFiManager::captivePortalRedirect(){
@@ -389,9 +392,31 @@ void AyresWiFiManager::handleSave() {
   ESP.restart();
 }
 
+void AyresWiFiManager::handleErase() {
+  if (captivePortalRedirect()) return;
+  lastHttpAccess = millis();
+
+  if (server.method() != HTTP_POST) {
+    server.send(405, "text/plain", "Método no permitido");
+    return;
+  }
+
+  // Confirmamos primero al navegador para evitar timeouts
+  server.send(200, "application/json", "{\"ok\":true}");
+
+  // Dar un respiro para que la respuesta salga por el socket
+  delay(150);
+
+  // Borra todos los .json (respetando la lista blanca setProtectedJsons)
+  eraseCredentials();
+
+  delay(300);
+  ESP.restart();
+}
+
 void AyresWiFiManager::handleScan() {
   lastHttpAccess = millis();
-  Serial.println("🔍 Escaneando redes WiFi (SYNC, AP+STA)…");
+  AWM_LOGI("🔍 Escaneando redes WiFi (SYNC, AP+STA)…");
 
   // Mantener el AP mientras el STA escanea
   WiFi.mode(WIFI_AP_STA);
@@ -412,7 +437,7 @@ void AyresWiFiManager::handleScan() {
   if (n < 0) {
     scanning = false;
     server.send(200, "application/json", "[]");
-    Serial.println("⚠️ Escaneo falló, devolviendo [].");
+    AWM_LOGW("⚠️ Escaneo falló, devolviendo []");
     return;
   }
 
@@ -437,7 +462,7 @@ void AyresWiFiManager::handleScan() {
   String out;
   serializeJson(arr, out);
   server.send(200, "application/json", out);
-  Serial.printf("✅ Escaneo OK: %d redes\n", (int)arr.size());
+  AWM_LOGI("✅ Escaneo OK: %d redes", (int)arr.size());
 }
 
 void AyresWiFiManager::handleNotFound() {
@@ -466,31 +491,31 @@ bool AyresWiFiManager::tieneCredenciales() const {
 
 void AyresWiFiManager::loadCredentials() {
   if (!LittleFS.exists("/wifi.json")) {
-    Serial.println("ℹ️ /wifi.json no existe.");
+    AWM_LOGI("ℹ️ /wifi.json no existe.");
     return;
   }
   File file = LittleFS.open("/wifi.json", "r");
   if (!file) {
-    Serial.println("❌ No se pudo abrir /wifi.json");
+    AWM_LOGE("❌ No se pudo abrir /wifi.json");
     return;
   }
   StaticJsonDocument<192> doc;
   DeserializationError error = deserializeJson(doc, file);
   file.close();
   if (error) {
-    Serial.println("❌ Error al deserializar JSON de /wifi.json");
+    AWM_LOGE("❌ Error al deserializar JSON de /wifi.json");
     return;
   }
 
   String loadedSsid = doc["ssid"].as<String>();
   String loadedPassword = doc["password"].as<String>();
   if (loadedSsid.isEmpty() || loadedPassword.isEmpty()) {
-    Serial.println("⚠️ Credenciales vacías en archivo.");
+    AWM_LOGW("⚠️ Credenciales vacías en archivo.");
     return;
   }
   ssid     = loadedSsid;
   password = loadedPassword;
-  Serial.printf("✅ Credenciales cargadas (SSID=\"%s\").\n", ssid.c_str());
+  AWM_LOGI("✅ Credenciales cargadas (SSID=\"%s\").", ssid.c_str());
 }
 
 void AyresWiFiManager::saveCredentials(String s, String p) {
@@ -499,7 +524,7 @@ void AyresWiFiManager::saveCredentials(String s, String p) {
   doc["password"] = p;
   File file = LittleFS.open("/wifi.json", "w");
   if (!file) {
-    Serial.println("❌ Error abriendo /wifi.json para escritura");
+    AWM_LOGE("❌ Error abriendo /wifi.json para escritura");
     return;
   }
   serializeJson(doc, file);
@@ -510,9 +535,9 @@ void AyresWiFiManager::eraseCredentials() {
   // LittleFS.remove("/wifi.json");
   // LittleFS.remove("/setup.json");
   // LittleFS.remove("/iporton.json");
-  // Serial.println("🧹 Credenciales y configuraciones relacionadas eliminadas.");
-  // Borra TODOS los .json del FS (respetando lo que marques como protegido)
-    eraseJsonInDir("/");   // raíz
+  // AWM_LOGI("🧹 Credenciales y configuraciones relacionadas eliminadas.");
+  // Borra TODOS los .json (respetando lo que marques como protegido)
+  eraseJsonInDir("/");   // raíz
 
   #if defined(ESP8266)
     // En ESP8266 el iterador no es recursivo,
@@ -522,8 +547,8 @@ void AyresWiFiManager::eraseCredentials() {
     // eraseJsonInDir("/data");
   #endif
 
-    Serial.println("🧹 Limpieza de .json finalizada (respetando protegidos).");
-  }
+  AWM_LOGI("🧹 Limpieza de .json finalizada (respetando protegidos).");
+}
 
 // =====================================================
 //                     CONEXIÓN STA
@@ -534,13 +559,13 @@ bool AyresWiFiManager::connectToWiFi() {
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid.c_str(), password.c_str());
 
-  Serial.print("Conectando a "); Serial.println(ssid);
+  AWM_LOGI("Conectando a %s", ssid.c_str());
 
   const uint32_t TOUT_MS = 15000;
   uint32_t t0 = millis();
   while (millis() - t0 < TOUT_MS) {
     if (WiFi.status() == WL_CONNECTED) {
-      Serial.printf("Conectado. IP: %s\n", WiFi.localIP().toString().c_str());
+      AWM_LOGI("Conectado. IP: %s", WiFi.localIP().toString().c_str());
       #if defined(ESP32)
         WiFi.setSleep(false);
       #endif
@@ -550,7 +575,7 @@ bool AyresWiFiManager::connectToWiFi() {
     delay(250);
   }
 
-  Serial.println("⏱️ Tiempo agotado. No se pudo conectar.");
+  AWM_LOGW("⏱️ Tiempo agotado. No se pudo conectar.");
   connected = false;
   return false;
 }
@@ -574,7 +599,7 @@ void AyresWiFiManager::reintentarConexionSiNecesario() {
   ultimoIntentoWiFi = ahora;
 
   if (!ssid.isEmpty() && !password.isEmpty()) {
-    Serial.println("🔁 Intentando reconexión WiFi...");
+    AWM_LOGI("🔁 Intentando reconexión WiFi...");
     if (portalActive) WiFi.mode(WIFI_AP_STA);
     else              WiFi.mode(WIFI_STA);
 
@@ -586,13 +611,13 @@ void AyresWiFiManager::reintentarConexionSiNecesario() {
       delay(250);
     }
     if (ok) {
-      Serial.println("🔌 Reconectado a WiFi.");
+      AWM_LOGI("🔌 Reconectado a WiFi.");
       sincronizarHoraNTP();
       connected = true;
       failCount = 0; failWindowStart = 0;
       return;
     }
-    Serial.println("❌ Reconexión WiFi fallida.");
+    AWM_LOGW("❌ Reconexión WiFi fallida.");
 
     // SMART_RETRIES
     if (fallbackPolicy == FallbackPolicy::SMART_RETRIES) {
@@ -601,10 +626,10 @@ void AyresWiFiManager::reintentarConexionSiNecesario() {
         failCount = 0;
       }
       failCount++;
-      Serial.printf("📉 SMART: fallos=%u/%u en %lu ms\n",
-                    failCount, maxFailRetries, (unsigned long)(millis()-failWindowStart));
+      AWM_LOGD("📉 SMART: fallos=%u/%u en %lu ms",
+               failCount, maxFailRetries, (unsigned long)(millis()-failWindowStart));
       if (failCount >= maxFailRetries) {
-        Serial.println("🚪 SMART: abriendo portal por fallos acumulados");
+        AWM_LOGW("🚪 SMART: abriendo portal por fallos acumulados");
         startPortal();
         failCount = 0; failWindowStart = 0;
       }
@@ -629,7 +654,7 @@ bool AyresWiFiManager::scanRedDetectada() {
 }
 
 void AyresWiFiManager::forzarReconexion() {
-  Serial.println("🔄  Forzando reconexión…");
+  AWM_LOGI("🔄  Forzando reconexión…");
   if (portalActive) WiFi.mode(WIFI_AP_STA);
   else              WiFi.mode(WIFI_STA);
   WiFi.begin(ssid.c_str(), password.c_str());
@@ -644,13 +669,13 @@ void AyresWiFiManager::sincronizarHoraNTP() {
   for (int j = 0; j < 20; j++) {
     time_t now = time(nullptr);
     if (now > 100000) {
-      Serial.print("🕒 Hora sincronizada: ");
-      Serial.println(ctime(&now));
+      // ctime() ya incluye \n
+      AWM_LOGI("🕒 Hora sincronizada: %s", ctime(&now));
       return;
     }
     delay(200);
   }
-  Serial.println("⚠️ NTP no respondió. Continuando sin sincronizar.");
+  AWM_LOGW("⚠️ NTP no respondió. Continuando sin sincronizar.");
 }
 
 uint64_t AyresWiFiManager::getTimestamp() {
@@ -813,9 +838,9 @@ void AyresWiFiManager::eraseJsonInDir(const char* dirPath) {
     } else {
       if (full.endsWith(".json") && !isProtectedJson(full)) {
         if (LittleFS.remove(full)) {
-          Serial.printf("🗑️  Borrado: %s\n", full.c_str());
+          AWM_LOGI("🗑️  Borrado: %s", full.c_str());
         } else {
-          Serial.printf("⚠️  No se pudo borrar: %s\n", full.c_str());
+          AWM_LOGW("⚠️  No se pudo borrar: %s", full.c_str());
         }
       }
     }
@@ -835,9 +860,9 @@ void AyresWiFiManager::eraseJsonInDir(const char* dirPath) {
 
     if (full.endsWith(".json") && !isProtectedJson(full)) {
       if (LittleFS.remove(full)) {
-        Serial.printf("🗑️  Borrado: %s\n", full.c_str());
+        AWM_LOGI("🗑️  Borrado: %s", full.c_str());
       } else {
-        Serial.printf("⚠️  No se pudo borrar: %s\n", full.c_str());
+        AWM_LOGW("⚠️  No se pudo borrar: %s", full.c_str());
       }
     }
   }

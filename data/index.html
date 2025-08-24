@@ -14,6 +14,8 @@
     :root{
       --bg:#0b1220; --card:#121a2b; --ring:#1b2a4a; --muted:#9fb0cf; --text:#e6efff;
       --accent:#4cc9f0; --accent2:#4361ee; --ok:#2ec27e; --bad:#ff6b6b;
+      --mid:#f4a261; /* moderada (naranja) */
+      --weak:#ffd166; /* débil (amarillo) */
       --r:14px;
     }
     *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -42,6 +44,18 @@
     }
     .logo svg{ width:18px; height:18px }
     .logo .wifi-icon{ fill:none; stroke:#fff; stroke-width:2; stroke-linecap:round; opacity:.95 }
+
+    /* PULSE suave del logo */
+    .logo::after{
+      content:""; position:absolute; inset:-2px; border-radius:inherit;
+      box-shadow:0 0 0 0 rgba(76,201,240,.35);
+      animation:pulse 2.4s ease-out infinite;
+    }
+    @keyframes pulse{
+      0%{ box-shadow:0 0 0 0 rgba(76,201,240,.35); }
+      70%{ box-shadow:0 0 0 12px rgba(76,201,240,0); }
+      100%{ box-shadow:0 0 0 0 rgba(76,201,240,0); }
+    }
 
     .title h1{font-size:16px; margin:0}
 
@@ -76,11 +90,15 @@
     .btn{
       appearance:none; border:1px solid #24406c; color:#e7f0ff; background:#0f1830;
       border-radius:10px; padding:10px 14px; font-size:16px;
+      transition: border-color .15s ease, background-color .15s ease, box-shadow .15s ease;
     }
+    /* Hover MUY sutil (sin movimiento) */
+    .btn:hover{ border-color:#385a9b; }
     .btn.primary{
       background:linear-gradient(135deg, var(--accent2), var(--accent));
       border-color:transparent; color:white;
     }
+    .btn.primary:hover{ box-shadow:0 0 0 2px rgba(67,97,238,.18) inset; }
     .btn[disabled]{opacity:.6}
 
     /* list */
@@ -95,9 +113,24 @@
     .ssid{font-weight:600; font-size:15px}
     .meta{font-size:12px; color:var(--muted); margin-top:2px}
     .lock{font-size:18px}
+
+    /* contenedor badge + barras a la derecha */
+    .sigwrap{ display:flex; align-items:center; gap:8px; }
+
     .bars{display:inline-grid; grid-auto-flow:column; gap:2px; align-items:end; height:14px}
     .bars span{width:3px; background:#26385f; display:block; border-radius:2px}
     .bars .on{background:#36a2ff}
+
+    /* badge calidad */
+    .qual{
+      font-size:12px; padding:2px 8px; border-radius:999px;
+      background:transparent; border:1px solid currentColor; line-height:1.6;
+      white-space:nowrap;
+    }
+    .qual.good{ color:var(--ok); }
+    .qual.mid{ color:var(--mid); }
+    .qual.weak{ color:var(--weak); }
+    .qual.bad{ color:var(--bad); }
 
     /* form */
     .row{display:flex; gap:10px; align-items:center; margin:10px 0}
@@ -120,6 +153,43 @@
       text-align:center; font-size:11px; color:var(--muted);
       margin:12px 8px 28px;
       padding-bottom: max(22px, env(safe-area-inset-bottom));
+    }
+
+    /* ==== estilos mínimos para el acordeón/erase ==== */
+    details.accordion{border-top:1px solid var(--ring);}
+    details.accordion > summary{
+      list-style:none; cursor:pointer; padding:12px; user-select:none;
+      display:flex; align-items:center; justify-content:space-between; gap:8px;
+      color:#d9e6ff;
+    }
+    details.accordion > summary::-webkit-details-marker{display:none}
+    .chev{transition:transform .2s ease}
+    details[open] .chev{transform:rotate(90deg)}
+
+    /* Contenido del acordeón con animación de altura */
+    .acc{ overflow:hidden; }
+
+    .btn.danger{
+      border-color:#6b1f2a;
+      background:linear-gradient(135deg, #7a1f2b, #b63545);
+      color:white;
+    }
+    .btn.ghost{background:transparent}
+    .danger-zone{
+      background:#1a0f14; border:1px solid #402029; padding:12px; border-radius:12px;
+    }
+    .danger-zone h3{margin:0 0 6px 0; font-size:14px; color:#ffd6d6}
+    .danger-zone .hint{color:#ffc0c0}
+    .pill{
+      background:#261724; color:#ffd9e0; border:1px dashed #6b2a36;
+      padding:4px 8px; border-radius:999px; font-size:12px;
+    }
+
+    /* Respeto accesibilidad: reducir movimiento */
+    @media (prefers-reduced-motion: reduce){
+      .logo::after{ animation:none !important; }
+      .chev{ transition:none !important; }
+      .btn{ transition:none !important; }
     }
   </style>
 </head>
@@ -191,6 +261,31 @@
         </form>
       </section>
 
+      <!-- ==== OPCIONES AVANZADAS (acordeón) ==== -->
+      <details class="accordion sec">
+        <summary>
+          <span>Opciones avanzadas</span>
+          <span class="chev">▶</span>
+        </summary>
+        <!-- NOTA: agregué clase 'acc' para animar -->
+        <div class="sec acc">
+          <div class="danger-zone">
+            <h3>Zona peligrosa <span class="pill">admin</span></h3>
+            <p class="hint">Borra los archivos <code>.json</code> (excepto los protegidos) y reinicia el equipo.</p>
+            <div class="row">
+              <label for="confirm">Confirmar</label>
+              <input id="confirm" class="input grow" placeholder="Escribí BORRAR para habilitar" />
+            </div>
+            <div class="row">
+              <label></label>
+              <button id="btn-erase" class="btn danger" type="button" disabled>🗑️ Borrar credenciales y reiniciar</button>
+              <button id="btn-reload" class="btn ghost" type="button" style="display:none">Refrescar</button>
+            </div>
+            <p id="erase-msg" class="hint" style="min-height:1.2em"></p>
+          </div>
+        </div>
+      </details>
+
       <section class="sec">
         <div class="hint">
           Si el portal no abre solo, conectate al AP y entrá a <code id="portal-url">http://192.168.4.1</code>.
@@ -205,18 +300,20 @@
   <script>
     (function(){
       const VERSION = "2.0.0"; // <— cambiás esto y listo
+      const SHOW_QUALITY = true; // o false para ocultar
       const vf = document.getElementById('ver-footer');
       const $ = sel => document.querySelector(sel);
       const els = {
         list: $('#list'), empty: $('#empty'), status: $('#status'), filter: $('#filter'),
         auto: $('#auto'), btnScan: $('#btn-scan'), ssid: $('#ssid'), pass: $('#password'),
         show: $('#show'), form: $('#form'), btnSave: $('#btn-save'),
-        apHost: $('#ap-host'), portalUrl: $('#portal-url'), ver: $('#ver')
+        apHost: $('#ap-host'), portalUrl: $('#portal-url'), ver: $('#ver'),
+        // nuevos
+        confirm: $('#confirm'), btnErase: $('#btn-erase'), eraseMsg: $('#erase-msg'), btnReload: $('#btn-reload')
       };
 
-      // Pintar versión en chip
+      // Pintar versión
       if (els.ver) els.ver.textContent = 'v' + VERSION;
-
       if (vf) vf.textContent = 'v' + VERSION;
 
       // Info AP/host
@@ -241,6 +338,18 @@
           wrap.appendChild(b);
         }
         return wrap;
+      }
+
+      // NUEVO: etiqueta de calidad por RSSI
+      function qualityTag(rssi){
+        let text = 'Mala', cls = 'bad';
+        if (rssi >= -60){ text = 'Buena'; cls = 'good'; }
+        else if (rssi >= -67){ text = 'Moderada'; cls = 'mid'; }
+        else if (rssi >= -75){ text = 'Débil'; cls = 'weak'; }
+        const span = document.createElement('span');
+        span.className = 'qual ' + cls;
+        span.textContent = text;
+        return span;
       }
 
       function dedupeBest(list){
@@ -272,10 +381,21 @@
           li.dataset.secure = !!n.secure;
 
           const lock=document.createElement('span'); lock.className='lock'; lock.textContent=n.secure?'🔒':'🔓';
-          const name=document.createElement('div'); name.innerHTML=`<div class="ssid">${n.ssid}</div><div class="meta">${n.rssi} dBm</div>`;
-          const sig=bars(n.rssi);
 
-          li.appendChild(lock); li.appendChild(name); li.appendChild(sig);
+          const name=document.createElement('div');
+          name.innerHTML=`<div class="ssid">${n.ssid}</div><div class="meta">${n.rssi} dBm</div>`;
+
+          const sig = bars(n.rssi);
+          const qual = qualityTag(n.rssi);
+          const right = document.createElement('div');
+          right.className = 'sigwrap';
+          if (SHOW_QUALITY) right.appendChild(qual);  // ← se agrega sólo si está habilitado
+          right.appendChild(sig);
+
+
+          li.appendChild(lock);
+          li.appendChild(name);
+          li.appendChild(right);
           els.list.appendChild(li);
         }
       }
@@ -325,6 +445,86 @@
         els.btnSave.disabled=true;
         els.btnSave.textContent='Guardando…';
       });
+
+      // ===== Avanzadas: habilitar BORRAR =====
+      if (els.confirm && els.btnErase){
+        els.confirm.addEventListener('input', ()=>{
+          const ok = (els.confirm.value.trim().toUpperCase() === 'BORRAR');
+          els.btnErase.disabled = !ok;
+          if (els.eraseMsg) els.eraseMsg.textContent = ok ? 'Listo para borrar.' : '';
+        });
+
+        els.btnErase.addEventListener('click', async ()=>{
+          if (els.btnErase.disabled) return;
+          els.btnErase.disabled = true;
+          els.btnErase.textContent = 'Eliminando…';
+          if (els.eraseMsg) els.eraseMsg.textContent = 'Borrando credenciales y reiniciando…';
+
+          try{
+            const body = new URLSearchParams(); body.set('confirm','BORRAR');
+            await fetch('/erase', {
+              method:'POST',
+              headers:{'Content-Type':'application/x-www-form-urlencoded'},
+              body
+            });
+            if (els.btnReload) els.btnReload.style.display = 'inline-block';
+          }catch(e){
+            console.error(e);
+            if (els.eraseMsg) els.eraseMsg.textContent = 'Error al solicitar borrado.';
+            els.btnErase.disabled = false;
+            els.btnErase.textContent = '🗑️ Borrar credenciales y reiniciar';
+          }
+        });
+      }
+
+      // Refrescar (útil tras el reboot)
+      if (els.btnReload){
+        els.btnReload.addEventListener('click', ()=> location.reload());
+      }
+
+      // ===== Acordeón suave =====
+      (function initAccordion(){
+        const det = document.querySelector('details.accordion');
+        if (!det) return;
+        const summary = det.querySelector(':scope > summary');
+        const body = det.querySelector(':scope > .acc');
+        if (!summary || !body) return;
+
+        // estado inicial
+        body.style.overflow = 'hidden';
+        body.style.height = det.hasAttribute('open') ? body.scrollHeight + 'px' : '0px';
+        body.style.transition = 'height 220ms ease';
+
+        summary.addEventListener('click', (ev)=>{
+          ev.preventDefault();
+          const isOpen = det.hasAttribute('open');
+
+          if (!isOpen) {
+            // abrir con animación
+            det.setAttribute('open','');
+            requestAnimationFrame(()=>{
+              body.style.height = body.scrollHeight + 'px';
+            });
+            const done = (e)=>{
+              if (e.propertyName !== 'height') return;
+              body.style.height = 'auto';
+              body.removeEventListener('transitionend', done);
+            };
+            body.addEventListener('transitionend', done);
+          } else {
+            // cerrar con animación
+            const h = body.scrollHeight;
+            body.style.height = h + 'px';
+            requestAnimationFrame(()=>{ body.style.height = '0px'; });
+            const done = (e)=>{
+              if (e.propertyName !== 'height') return;
+              det.removeAttribute('open');
+              body.removeEventListener('transitionend', done);
+            };
+            body.addEventListener('transitionend', done);
+          }
+        });
+      })();
 
       // Primer ciclo
       scan();

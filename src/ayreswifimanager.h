@@ -171,6 +171,7 @@ private:
     void handleScan();
     void handleNotFound();
     void mostrarPaginaError(const String& mensajeFallback);
+    void handleErase();  // nueva linea para eliminar desde el sitio.
 
     // ---------- credenciales ----------
     void loadCredentials();
