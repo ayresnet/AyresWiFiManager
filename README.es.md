@@ -320,4 +320,6 @@ MIT — ver archivo `LICENSE` (o cabeceras SPDX en el código).
 
 ---
 
+> 📘 [Leer en ingles → README.md](README.md)
+
 ¿Dudas o ideas? Abrí un issue en el repo. ¡Gracias por probar **AyresWiFiManager**! 🚀
