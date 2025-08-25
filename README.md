@@ -322,5 +322,7 @@ MIT — see `LICENSE` (or SPDX headers in source files).
 
 ---
 
+> 📘 [Read this in Spanish → README.es.md](README.es.md)
+
 Questions or ideas? Open an issue. Thanks for trying **AyresWiFiManager**! 🚀
 
