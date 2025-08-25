@@ -35,9 +35,13 @@
       <td style="padding: 5px;">
         <img src="https://res.cloudinary.com/dxunooptp/image/upload/v1756089447/awm02_mvzmxr.png" alt="Imagen 2" width="250">
       </td>
+      <td style="padding: 5px;">
+        <img src="https://res.cloudinary.com/dxunooptp/image/upload/v1756093584/imagen_2025-08-25_004621649_gpiecd.png" width="250">
+      </td>
     </tr>
   </table>
 </div>
+
 
 **AWM - Gestor Wi‑Fi “pro” para ESP32/ESP8266** con portal cautivo real (AP+DNS), UI moderna servida desde **LittleFS**, almacenamiento seguro de credenciales, **políticas de fallback**, botón de provisión, LED de estado, **NTP**, chequeo de Internet y **logging** configurable.
 
