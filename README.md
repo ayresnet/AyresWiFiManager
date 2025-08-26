@@ -42,7 +42,14 @@
   </table>
 </div>
 
+---
 
+📢 Now available in the Arduino IDE!
+
+You can install AyresWiFiManager directly from the Arduino IDE Library Manager.  
+Just search for “AyresWiFiManager” and click “Install”.
+
+---
 **AWM — Pro Wi‑Fi manager for ESP32/ESP8266** featuring a real captive portal (AP+DNS), modern UI served from **LittleFS**, secure credential storage, **fallback policies**, provisioning button, status LED, **NTP**, Internet reachability check, and configurable **logging**.
 
 > Project: https://github.com/AyresNet/AyresWiFiManager  
