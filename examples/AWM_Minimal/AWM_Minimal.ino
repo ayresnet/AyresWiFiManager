@@ -1,22 +1,46 @@
 /**
- * AyresWiFiManager - Minimal Example
- * ----------------------------------
- * Demonstrates how to use AyresWiFiManager (AWM) to connect ESP32/ESP8266
- * to WiFi with captive portal fallback and credentials stored in LittleFS.
+ * AyresWiFiManager - Minimal_OK (Arduino IDE friendly)
+ * ====================================================
  *
- * Features:
- * - If saved credentials are valid → connects automatically.
- * - If no credentials / invalid → starts AP + captive portal for setup.
+ * Description:
+ * ------------
+ * Minimal example of using AyresWiFiManager v2.0.1 with ESP32/ESP8266.
  *
- * Author: Daniel Salgado (AyresNet)
- * License: MIT
+ * Key Features:
+ *  - If saved credentials are valid → connects automatically (STA mode).
+ *  - If no credentials or WiFi fails → automatically falls back to captive portal (AP + DNS).
+ *
+ * Requirements:
+ * -------------
+ * 1. Install AyresWiFiManager v2.0.1 (or higher).
+ * 2. Prepare HTML files in LittleFS (upload with "ESP32 LittleFS Data Upload"
+ *    or "pio run --target uploadfs" in PlatformIO). Place them in /data:
+ *       - index.html   → main portal page
+ *       - success.html → shown after saving credentials
+ *       - error.html   → shown if something fails
+ *
+ * Usage:
+ * ------
+ *  - On boot, the device tries to connect with saved credentials.
+ *  - If it cannot connect, a captive portal opens automatically.
+ *  - Once credentials are saved, device will reconnect automatically on next boot.
+ *
+ * Compatibility:
+ * --------------
+ *  - ESP32 (Arduino core)
+ *  - ESP8266 (Arduino core)
+ *
+ * Author:
+ * -------
+ *  Daniel C. Salgado – AyresNet
+ *
+ * License:
+ * --------
+ *  MIT
  */
 
 #include <Arduino.h>
 #include <AyresWiFiManager.h>
-
-// Optional: set your AP SSID prefix for captive portal mode
-#define AWM_AP_PREFIX "AWM-Setup"
 
 AyresWiFiManager awm;
 
@@ -24,38 +48,33 @@ void setup() {
   Serial.begin(115200);
   delay(500);
 
-  Serial.println(F("\n[AWM] Minimal Example"));
+  Serial.printf("\n[AWM] Minimal Example - v%s\n", AWM_VERSION);
 
-  // Initialize AyresWiFiManager
-  // Parameters:
-  //  - SSID prefix for AP mode
-  //  - Password for AP (optional, "" = open)
-  awm.begin(AWM_AP_PREFIX, "");
+  // Initialize and attempt to connect using saved credentials
+  awm.begin();
 
-  Serial.printf("[AWM] Using AyresWiFiManager v%s\n", AWM_VERSION);
-
-  // Try connecting to WiFi (saved credentials in LittleFS)
-  if (awm.autoConnect()) {
-    Serial.print(F("[AWM] Connected! IP: "));
+  // If WiFi connects, print IP
+  if (awm.isConnected()) {
+    Serial.print("[AWM] Connected! IP: ");
     Serial.println(WiFi.localIP());
   } else {
-    Serial.println(F("[AWM] Failed to connect. Captive portal is active."));
+    Serial.println("[AWM] No WiFi connection. Captive portal active.");
   }
 }
 
 void loop() {
-  // Handle captive portal requests if AP is active
-  awm.handleClient();
+  // Mandatory to keep AWM running (portal, reconnection, etc.)
+  awm.update();
 
-  // Print WiFi status periodically
+  // Periodic status print
   static unsigned long lastPrint = 0;
   if (millis() - lastPrint > 5000) {
     lastPrint = millis();
-    if (WiFi.isConnected()) {
-      Serial.print(F("[AWM] WiFi connected. IP: "));
+    if (awm.isConnected()) {
+      Serial.print("[AWM] WiFi connected. IP: ");
       Serial.println(WiFi.localIP());
     } else {
-      Serial.println(F("[AWM] WiFi not connected."));
+      Serial.println("[AWM] WiFi not connected.");
     }
   }
 }
