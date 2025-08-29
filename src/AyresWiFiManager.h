@@ -1,62 +1,75 @@
 /* 
  *  SPDX-License-Identifier: MIT
- *  AyresWiFiManager — Header
+ *  AyresWiFiManager — Public API (Header)
  *  ---------------------------------------------------------------
  *  @file      AyresWiFiManager.h
- *  @brief     Gestor Wi-Fi “pro” para ESP32/ESP8266 con portal cautivo,
- *             almacenamiento de credenciales en LittleFS, escaneo JSON,
- *             LED de estado, botón de provisión y utilidades extra.
+ *  @version   2.0.1
+ *  @author    Daniel C. Salgado — AyresNet
+ *  @license   MIT
+ *  @project   https://github.com/AyresNet/AyresWiFiManager
  *
- *  @details
- *  • Almacena credenciales en /wifi.json (LittleFS).
- *  • Portal cautivo AP+DNS (opcional) sirviendo HTML desde el FS:
- *      - GET  /            → index.html
- *      - POST /save        → guarda ssid/password y reinicia
- *      - GET  /scan(.json) → listado de redes [{ssid,rssi,secure}]
- *  • “Captive Portal” real: redirección de dominios comunes (Android/iOS/Win)
- *    y DNS catch-all a 192.168.4.1 (desactivable con setCaptivePortal(false)).
- *  • Políticas de fallback: NO_CREDENTIALS_ONLY, ON_FAIL, SMART_RETRIES,
- *    BUTTON_ONLY y NEVER.
- *  • Botón (activo en LOW):
- *      - 2–5 s → abre portal
- *      - ≥5 s  → borra .json (respetando lista blanca) y reinicia
- *  • LED de estado (pin por defecto 2):
- *      Conectado→ON | Portal→BLINK_SLOW | Escaneo→BLINK_FAST | Idle→OFF
- *  • NTP (pool.ntp.org / time.nist.gov) y verificación de Internet (generate_204).
- *  • v2.0.0: Lista blanca de .json configurable desde el sketch:
- *      setProtectedJsons({"wifi.json","licencia.json", ...})
+ *  @brief  Professional Wi-Fi manager for ESP32/ESP8266 featuring:
+ *          • Captive portal (AP + DNS catch-all) for provisioning
+ *          • Credentials stored in LittleFS (/wifi.json)
+ *          • JSON scan endpoint (/scan or /scan.json)
+ *          • Fallback policies + auto-reconnect
+ *          • Provisioning button (short/long press actions)
+ *          • Status LED patterns
+ *          • Optional NTP sync and Internet reachability check (generate_204)
  *
- *  Compatibilidad
- *  ---------------------------------------------------------------
- *  • ESP32 (Arduino core) — <WiFi.h>, <WebServer.h>, HTTPClient, LittleFS.
- *  • ESP8266 (Arduino core) — <ESP8266WiFi.h>, <ESP8266WebServer.h>,
- *    ESP8266HTTPClient y LittleFS.
+ *  Key HTTP routes (served from LittleFS):
+ *    - GET  /             → index.html
+ *    - POST /save         → store SSID/password and restart
+ *    - GET  /scan(.json)  → Wi-Fi list [{ssid,rssi,secure}]
+ *    - GET  /erase        → wipe stored credentials (respects whitelist)
  *
- *  Uso mínimo
- *  ---------------------------------------------------------------
- *  @code
- *    AyresWiFiManager wifi;
- *    void setup() {
- *      wifi.setAPCredentials("ayreswifimanager","123456789");
- *      wifi.setPortalTimeout(300);       // 5 min de inactividad
- *      wifi.setAPClientCheck(true);      // no cierra si hay clientes
- *      wifi.setWebClientCheck(true);     // cada request reinicia timer
- *      // wifi.setCaptivePortal(false);  // si querés SIN redirecciones
- *      wifi.begin();
- *      wifi.run();                       // intenta STA o aplica política
- *    }
- *    void loop() { wifi.update(); }
- *  @endcode
+ *  Fallback policies:
+ *    - NO_CREDENTIALS_ONLY (default) | ON_FAIL | SMART_RETRIES | BUTTON_ONLY | NEVER
  *
- *  Autor       : (Daniel Salgado) — AyresNet
- *  Versión     : 2.0.0
- *  Licencia    : MIT
- *  Proyecto    : https://github.com/AyresNet/AyresWiFiManager
- *  (C) 2025 AyresNet. Todos los derechos reservados bajo licencia MIT.
+ *  Button (active LOW, configurable):
+ *    - 2–5 s  → open captive portal
+ *    - ≥5 s   → erase credentials (respecting whitelist) and restart
+ *
+ *  Status LED (default pin 2):
+ *    - Connected → ON | Portal → BLINK_SLOW | Scan → BLINK_FAST | Idle → OFF
+ *
+ *  v2.0.1 highlights:
+ *    - Configurable reconnect backoff and attempt windows
+ *    - JSON whitelist via setProtectedJsons({...})
+ *    - External AP/portal coexistence flag:
+ *        setExternalApActive(true) keeps SoftAP in AP+STA scenarios and
+ *        prevents unintended portal shutdown while an external AP/portal is active
+ *
+ *  Compatibility:
+ *    - ESP32 Arduino core: <WiFi.h>, <WebServer.h>, HTTPClient, LittleFS
+ *    - ESP8266 Arduino core: <ESP8266WiFi.h>, <ESP8266WebServer.h>, ESP8266HTTPClient, LittleFS
+ *
+ *  Minimal usage:
+ *    @code
+ *      #include <AyresWiFiManager.h>
+ *      AyresWiFiManager wifi;
+ *      void setup() {
+ *        wifi.setAPCredentials("ayreswifimanager","123456789");
+ *        wifi.setPortalTimeout(300);      // 5 min inactivity
+ *        wifi.setAPClientCheck(true);     // keep portal if AP clients exist
+ *        wifi.setWebClientCheck(true);    // reset timeout on HTTP requests
+ *        // wifi.setCaptivePortal(false); // disable DNS redirection if needed
+ *        wifi.begin();
+ *        wifi.run();                      // try STA or fallback to portal
+ *      }
+ *      void loop() { wifi.update(); }
+ *    @endcode
  */
+
 
 #ifndef AYRES_WIFI_MANAGER_H
 #define AYRES_WIFI_MANAGER_H
+
+// ===== Versioning (public) =====
+#define AWM_VERSION        "2.0.1"
+#define AWM_VERSION_MAJOR  2
+#define AWM_VERSION_MINOR  0
+#define AWM_VERSION_PATCH  1
 
 #include <Arduino.h>
 
@@ -151,6 +164,12 @@ public:
     // Pasá uno o varios nombres (con o sin '/'). Ejemplo:
     // wifiManager.setProtectedJsons({"/licencia.json","secret.json"});
     void setProtectedJsons(std::initializer_list<const char*> names);
+
+    // ==== NUEVO: control de reconexión y AP externo ====
+    void setReconnectBackoffMs(uint32_t ms);   // [NEW]
+    void setReconnectAttemptMs(uint32_t ms);   // [NEW]
+    void setExternalApActive(bool active);     // [NEW]
+    bool isExternalApActive() const;           // [NEW]
 
 private:
     // ---------- portal AP/DNS/HTTP ----------
@@ -247,6 +266,13 @@ private:
 
     // Lista blanca exacta (nombres de archivo)
     std::vector<String> _protectedExact;
+
+    // [NEW] Parámetros de reconexión configurables
+    uint32_t reconnectBackoffMs = 10000;  // default 10s (antes fijo)
+    uint32_t reconnectAttemptMs = 5000;   // default 5s  (antes fijo)
+
+    // [NEW] Bandera para indicar que hay un AP/portal externo activo
+    bool externalApActive = false;        // usado para mantener AP_STA en reintentos
 };
 
 #endif // AYRES_WIFI_MANAGER_H

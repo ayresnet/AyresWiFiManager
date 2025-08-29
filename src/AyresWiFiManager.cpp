@@ -1,49 +1,71 @@
 /*
  *  SPDX-License-Identifier: MIT
- *  AyresWiFiManager — Implementation
+ *  AyresWiFiManager — Implementación (Source)
  *  ---------------------------------------------------------------
  *  @file      AyresWiFiManager.cpp
- *  @brief     Implementación multiplataforma (ESP32/ESP8266) del gestor Wi-Fi
- *             con portal cautivo, almacenamiento en LittleFS y utilidades.
+ *  @versión   2.0.1
+ *  @autor     Daniel C. Salgado — AyresNet
+ *  @licencia  MIT
+ *  @proyecto  https://github.com/AyresNet/AyresWiFiManager
+ *
+ *  @resumen
+ *    Implementación multiplataforma (ESP32/ESP8266) del gestor Wi-Fi con:
+ *    portal cautivo (AP + DNS catch-all), almacenamiento en LittleFS,
+ *    políticas de fallback, botón de provisión, LED de estados, NTP opcional
+ *    y verificación de Internet (generate_204).
  *
  *  Notas de implementación
  *  ---------------------------------------------------------------
- *  • ESP32:
- *      - Desactiva power-save: esp_wifi_set_ps(WIFI_PS_NONE).
- *      - LittleFS.begin(true) para auto-formateo si falla el montaje.
- *      - Borrado recursivo de *.json cerrando el File antes de unlink.
- *  • ESP8266:
- *      - Sleep OFF: WiFi.setSleepMode(WIFI_NONE_SLEEP).
- *      - Iteración LittleFS no recursiva: eraseJsonInDir() itera por carpeta.
+ *  • ESP32
+ *      - Ahorro de energía deshabilitado: esp_wifi_set_ps(WIFI_PS_NONE).
+ *      - LittleFS.begin(true) → auto-formatea si falla el montaje.
+ *      - Borrado de JSON: cerrar File antes de unlink; recursivo por carpeta.
  *
- *  Estados de LED (por defecto pin 2):
- *      ON            → conectado a Wi-Fi
- *      BLINK_SLOW    → portal activo
- *      BLINK_FAST    → escaneando
- *      BLINK_DOUBLE  → feedback durante hold 2–5 s (abrirá portal)
- *      BLINK_TRIPLE  → feedback durante hold ≥5 s (borrará JSONs)
- *      OFF           → sin enlace y sin portal
+ *  • ESP8266
+ *      - Sleep deshabilitado: WiFi.setSleepMode(WIFI_NONE_SLEEP).
+ *      - Borrado de JSON no recursivo: eraseJsonInDir() itera por carpeta.
  *
- *  Botón (pin 0, PULLUP, activo en LOW):
- *      2–5 s  → abre portal si enableButtonPortal(true)
- *      ≥5 s   → borra JSONs (respetando setProtectedJsons) y reinicia
+ *  Estados del LED (pin por defecto 2)
+ *      ON             → conectado
+ *      BLINK_SLOW     → portal activo
+ *      BLINK_FAST     → escaneando
+ *      BLINK_DOUBLE   → feedback durante hold 2–5 s (abrirá portal)
+ *      BLINK_TRIPLE   → feedback durante hold ≥5 s (borrará credenciales)
+ *      OFF            → sin enlace y sin portal
  *
- *  Portal cautivo:
+ *  Botón (pin 0, INPUT_PULLUP, activo en LOW)
+ *      2–5 s  → abre portal (si enableButtonPortal(true))
+ *      ≥5 s   → borra credenciales (respetando setProtectedJsons) y reinicia
+ *
+ *  Portal cautivo
  *      • setCaptivePortal(true) habilita DNS catch-all y rutas “captive”.
- *      • setPortalTimeout(segundos) define cierre automático por inactividad.
+ *      • setPortalTimeout(seg) cierre por inactividad.
  *      • setAPClientCheck(true) evita cierre si hay clientes en el AP.
  *      • setWebClientCheck(true) reinicia el timeout por cada request HTTP.
  *
- *  Borrado seguro de .json (v2.0.0):
- *      • eraseJsonInDir("/") elimina todos los .json salvo los protegidos
- *        con setProtectedJsons({ ... }). En ESP32 es recursivo; en ESP8266,
- *        llamá explícitamente por carpeta si usás subdirectorios.
+ *  Borrado seguro de .json
+ *      • eraseJsonInDir("/") elimina todos los .json excepto los protegidos
+ *        mediante setProtectedJsons({...}). En ESP32 es recursivo; en ESP8266,
+ *        llamar por carpeta si hay subdirectorios.
  *
- *  Autor       : (Daniel Salgado)) — AyresNet
- *  Versión     : 2.0.0
- *  Licencia    : MIT
- *  Proyecto    : https://github.com/AyresNet/AyresWiFiManager
+ *  Novedades v2.0.1
+ *  ---------------------------------------------------------------
+ *  • Reconexión configurable:
+ *      - setReconnectBackoffMs(ms) → retraso mínimo entre reintentos (por defecto 10 s)
+ *      - setReconnectAttemptMs(ms) → ventana por intento (por defecto 5 s)
+ *  • Convivencia con AP/portal externo:
+ *      - setExternalApActive(true) habilita escenarios AP+STA sin bajar el SoftAP
+ *        externo durante los reintentos; el portal **no se cierra** de forma
+ *        inadvertida si hay un AP/portal externo activo.
+ *      - stopPortal() preserva el SoftAP cuando el flag externo está activo.
+ *      - forzarReconexion() y reintentarConexionSiNecesario() respetan dicho flag.
+ *
+ *  Consideraciones de rendimiento
+ *      - Evitar escaneos demasiado frecuentes (SCAN_INTERVAL_MS).
+ *      - Cachear el resultado de /scan(.json) si la ventana es corta.
+ *      - Ajustar patrones del LED para minimizar jitter en WiFi/HTTP.
  */
+
 
 #include "AyresWiFiManager.h"
 #include <ArduinoJson.h>
@@ -51,7 +73,7 @@
 
 #if defined(ESP32)
   #include <HTTPClient.h>
-  #include <esp_wifi.h>   // para esp_wifi_set_ps(WIFI_PS_NONE)
+  #include <esp_wifi.h>
 #elif defined(ESP8266)
   #include <ESP8266HTTPClient.h>
 #endif
@@ -88,6 +110,22 @@ void AyresWiFiManager::setSmartRetries(uint8_t maxRetries, uint32_t windowMs){
   maxFailRetries = maxRetries; failWindowMs = windowMs;
 }
 void AyresWiFiManager::enableButtonPortal(bool enable){ allowButtonPortal = enable; }
+
+// ===== [NEW] Reconexión configurable =====
+void AyresWiFiManager::setReconnectBackoffMs(uint32_t ms){
+  reconnectBackoffMs = (ms < 1000) ? 1000 : ms; // sanity min 1s
+  AWM_LOGI("⚙️  Backoff de reconexión = %lu ms", (unsigned long)reconnectBackoffMs);
+}
+void AyresWiFiManager::setReconnectAttemptMs(uint32_t ms){
+  reconnectAttemptMs = (ms < 1000) ? 1000 : ms; // min 1s
+  AWM_LOGI("⚙️  Ventana de intento = %lu ms", (unsigned long)reconnectAttemptMs);
+}
+// ===== [NEW] AP/portal externo =====
+void AyresWiFiManager::setExternalApActive(bool active){
+  externalApActive = active;
+  AWM_LOGI("⚙️  AP externo activo: %s", externalApActive ? "sí" : "no");
+}
+bool AyresWiFiManager::isExternalApActive() const { return externalApActive; }
 
 // =====================================================
 //                      BEGIN / RUN
@@ -292,11 +330,24 @@ void AyresWiFiManager::stopPortal(){
   if (!portalActive) return;
   stopDNS();
   server.stop();
-  WiFi.softAPdisconnect(true);
+
+  // [CHANGED] Si hay AP externo activo, NO bajamos el SoftAP global.
+  if (!externalApActive) {
+    WiFi.softAPdisconnect(true);
+  } else {
+    AWM_LOGI("🔒 AP externo activo → preservo SoftAP (no se desconecta).");
+  }
+
   portalActive = false;
 
-  if (!ssid.isEmpty()) WiFi.mode(WIFI_STA);
-  else                 WiFi.mode(WIFI_OFF);
+  // [CHANGED] Restaurar modo según contexto:
+  if (externalApActive) {
+    // Dejar radio en AP activo (el externo gestiona su web)
+    WiFi.mode(WIFI_AP);
+  } else {
+    if (!ssid.isEmpty()) WiFi.mode(WIFI_STA);
+    else                 WiFi.mode(WIFI_OFF);
+  }
 
   AWM_LOGI("✅ Portal cautivo detenido");
 }
@@ -403,8 +454,6 @@ void AyresWiFiManager::handleErase() {
 
   // Confirmamos primero al navegador para evitar timeouts
   server.send(200, "application/json", "{\"ok\":true}");
-
-  // Dar un respiro para que la respuesta salga por el socket
   delay(150);
 
   // Borra todos los .json (respetando la lista blanca setProtectedJsons)
@@ -532,19 +581,10 @@ void AyresWiFiManager::saveCredentials(String s, String p) {
 }
 
 void AyresWiFiManager::eraseCredentials() {
-  // LittleFS.remove("/wifi.json");
-  // LittleFS.remove("/setup.json");
-  // LittleFS.remove("/iporton.json");
-  // AWM_LOGI("🧹 Credenciales y configuraciones relacionadas eliminadas.");
-  // Borra TODOS los .json (respetando lo que marques como protegido)
   eraseJsonInDir("/");   // raíz
 
   #if defined(ESP8266)
-    // En ESP8266 el iterador no es recursivo,
-    // si guardás .json en subcarpetas, llamá explícitamente:
-    // eraseJsonInDir("/wifimanager");
-    // eraseJsonInDir("/config");
-    // eraseJsonInDir("/data");
+    // En ESP8266 el iterador no es recursivo; llamar por subcarpetas si hace falta.
   #endif
 
   AWM_LOGI("🧹 Limpieza de .json finalizada (respetando protegidos).");
@@ -566,9 +606,9 @@ bool AyresWiFiManager::connectToWiFi() {
   while (millis() - t0 < TOUT_MS) {
     if (WiFi.status() == WL_CONNECTED) {
       AWM_LOGI("Conectado. IP: %s", WiFi.localIP().toString().c_str());
-      #if defined(ESP32)
-        WiFi.setSleep(false);
-      #endif
+#if defined(ESP32)
+      WiFi.setSleep(false);
+#endif
       connected = true;
       return true;
     }
@@ -595,18 +635,25 @@ void AyresWiFiManager::reintentarConexionSiNecesario() {
 
   connected = false;
   unsigned long ahora = millis();
-  if (ahora - ultimoIntentoWiFi < 10000) return; // backoff 10s
+
+  // [CHANGED] Backoff configurable
+  if (ahora - ultimoIntentoWiFi < reconnectBackoffMs) return;
   ultimoIntentoWiFi = ahora;
 
   if (!ssid.isEmpty() && !password.isEmpty()) {
-    AWM_LOGI("🔁 Intentando reconexión WiFi...");
-    if (portalActive) WiFi.mode(WIFI_AP_STA);
-    else              WiFi.mode(WIFI_STA);
+    AWM_LOGI("🔁 Intentando reconexión WiFi... (ventana=%lu ms, backoff=%lu ms)",
+             (unsigned long)reconnectAttemptMs, (unsigned long)reconnectBackoffMs);
+
+    // [CHANGED] Si hay portal AWM o AP externo, mantener AP activo durante el intento
+    if (portalActive || externalApActive) WiFi.mode(WIFI_AP_STA);
+    else                                  WiFi.mode(WIFI_STA);
 
     WiFi.begin(ssid.c_str(), password.c_str());
     uint32_t t0 = millis();
     bool ok = false;
-    while (millis() - t0 < 5000) {
+
+    // [CHANGED] Ventana configurable
+    while (millis() - t0 < reconnectAttemptMs) {
       if (WiFi.status() == WL_CONNECTED) { ok = true; break; }
       delay(250);
     }
@@ -619,7 +666,7 @@ void AyresWiFiManager::reintentarConexionSiNecesario() {
     }
     AWM_LOGW("❌ Reconexión WiFi fallida.");
 
-    // SMART_RETRIES
+    // SMART_RETRIES (sin cambios)
     if (fallbackPolicy == FallbackPolicy::SMART_RETRIES) {
       if (failWindowStart == 0 || (millis() - failWindowStart) > failWindowMs) {
         failWindowStart = millis();
@@ -655,8 +702,10 @@ bool AyresWiFiManager::scanRedDetectada() {
 
 void AyresWiFiManager::forzarReconexion() {
   AWM_LOGI("🔄  Forzando reconexión…");
-  if (portalActive) WiFi.mode(WIFI_AP_STA);
-  else              WiFi.mode(WIFI_STA);
+  // [CHANGED] Respetar AP externo para no tumbarlo
+  if (portalActive || externalApActive) WiFi.mode(WIFI_AP_STA);
+  else                                  WiFi.mode(WIFI_STA);
+
   WiFi.begin(ssid.c_str(), password.c_str());
   ultimoIntentoWiFi = millis();
 }
@@ -669,7 +718,6 @@ void AyresWiFiManager::sincronizarHoraNTP() {
   for (int j = 0; j < 20; j++) {
     time_t now = time(nullptr);
     if (now > 100000) {
-      // ctime() ya incluye \n
       AWM_LOGI("🕒 Hora sincronizada: %s", ctime(&now));
       return;
     }
@@ -788,11 +836,9 @@ void AyresWiFiManager::setAutoReconnect(bool habilitado) {
   WiFi.setAutoReconnect(habilitado);
 }
 
-
 // =====================================================
 //             Helpers estáticos (borrado de JSONs)
 // =====================================================
-// ===== ÚNICO método público para configurar la lista blanca =====
 void AyresWiFiManager::setProtectedJsons(std::initializer_list<const char*> names) {
   _protectedExact.clear();
   for (auto n : names) {
