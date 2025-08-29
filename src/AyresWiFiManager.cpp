@@ -3,7 +3,7 @@
  *  AyresWiFiManager — Implementación (Source)
  *  ---------------------------------------------------------------
  *  @file      AyresWiFiManager.cpp
- *  @versión   2.0.1
+ *  @versión   2.0.2
  *  @autor     Daniel C. Salgado — AyresNet
  *  @licencia  MIT
  *  @proyecto  https://github.com/AyresNet/AyresWiFiManager

@@ -3,7 +3,7 @@
  *  AyresWiFiManager — Public API (Header)
  *  ---------------------------------------------------------------
  *  @file      AyresWiFiManager.h
- *  @version   2.0.1
+ *  @version   2.0.2
  *  @author    Daniel C. Salgado — AyresNet
  *  @license   MIT
  *  @project   https://github.com/AyresNet/AyresWiFiManager
@@ -66,10 +66,10 @@
 #define AYRES_WIFI_MANAGER_H
 
 // ===== Versioning (public) =====
-#define AWM_VERSION        "2.0.1"
+#define AWM_VERSION        "2.0.2"
 #define AWM_VERSION_MAJOR  2
 #define AWM_VERSION_MINOR  0
-#define AWM_VERSION_PATCH  1
+#define AWM_VERSION_PATCH  2
 
 #include <Arduino.h>
 

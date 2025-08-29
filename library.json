@@ -1,6 +1,6 @@
 {
   "name": "AyresWiFiManager",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "description": "AyresWiFiManager (AWM): a modern WiFiManager-style alternative for ESP32/ESP8266 with a captive portal, LittleFS-stored credentials, NTP, and a status LED.",
   "keywords": "wifi,wifimanager,captive-portal,esp32,esp8266,littlefs,dns,webserver,ntp,iot",
   "authors": [
