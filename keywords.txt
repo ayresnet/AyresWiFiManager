@@ -1,0 +1,58 @@
+#######################################
+# AyresWiFiManager - keywords.txt
+# Syntax highlighting for Arduino IDE
+#######################################
+
+#######################################
+# Class
+#######################################
+AyresWiFiManager	KEYWORD1
+
+#######################################
+# Methods (KEYWORD2)
+#######################################
+begin	KEYWORD2
+run	KEYWORD2
+update	KEYWORD2
+openPortal	KEYWORD2
+closePortal	KEYWORD2
+isPortalActive	KEYWORD2
+setHtmlPathPrefix	KEYWORD2
+setHostname	KEYWORD2
+setAPCredentials	KEYWORD2
+setCaptivePortal	KEYWORD2
+setPortalTimeout	KEYWORD2
+setAPClientCheck	KEYWORD2
+setWebClientCheck	KEYWORD2
+setFallbackPolicy	KEYWORD2
+setSmartRetries	KEYWORD2
+enableButtonPortal	KEYWORD2
+setAutoReconnect	KEYWORD2
+isConnected	KEYWORD2
+connectToWiFi	KEYWORD2
+reintentarConexionSiNecesario	KEYWORD2
+hayInternet	KEYWORD2
+tieneCredenciales	KEYWORD2
+scanRedDetectada	KEYWORD2
+forzarReconexion	KEYWORD2
+setLedAuto	KEYWORD2
+setLedPatternManual	KEYWORD2
+setProtectedJsons	KEYWORD2
+setReconnectBackoffMs	KEYWORD2
+setReconnectAttemptMs	KEYWORD2
+setExternalApActive	KEYWORD2
+isExternalApActive	KEYWORD2
+
+#######################################
+# Constants / Literals
+#######################################
+AWM_VERSION	LITERAL1
+AWM_VERSION_MAJOR	LITERAL1
+AWM_VERSION_MINOR	LITERAL1
+AWM_VERSION_PATCH	LITERAL1
+
+#######################################
+# Enums
+#######################################
+FallbackPolicy	KEYWORD1
+LedPattern	KEYWORD1
