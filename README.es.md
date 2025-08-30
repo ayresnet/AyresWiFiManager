@@ -269,30 +269,69 @@ AyresWiFiManager busca ser **simple y explícito**:
 
 ## 📚 Ejemplos
 
-- `examples/standard/src/main.cpp` – flujo simple estándar  
-- `examples/30sVentana/src/main.cpp` – “ventana” de arranque de 30 s si hay credenciales
+- `examples/AWM_Minimal/AWM_Minimal.ino` – uso mínimo (`begin()`, `update()`, `isConnected()`).  
+- `examples/AWM_Advanced/AWM_Advanced.ino` – LED de estado, botón de pulsación corta → portal, NTP, reconexión.  
+- `examples/standard/main.cpp` – flujo simple estándar.  
+- `examples/30sVentana/main.cpp` – “ventana” de arranque de 30 s si existen credenciales.  
+- `examples/usedExample/usedExample.ino` – ejemplo de uso legado.
 
 ---
 
 ## 🗃 Estructura del repo
 
-```
-data/                  # HTML/CSS/JS del portal (LittleFS)
-examples/
-  standard/src/main.cpp
-  30sVentana/src/main.cpp
-include/
-  AWM_Logging.h
-src/
-  ayreswifimanager.h
-  ayreswifimanager.cpp
-platformio.ini
-library.properties
-library.json
-README.md
+```text
+AyresWiFiManager/
+├─ data/                     # Captive-portal HTML/CSS/JS (LittleFS examples)
+│  ├─ index.html             # Main portal page
+│  ├─ success.html           # Confirmation after saving credentials
+│  └─ error.html             # Error page
+│
+├─ examples/                 # Example sketches (Arduino IDE & PlatformIO)
+│  ├─ AWM_Minimal/
+│  │   └─ AWM_Minimal.ino    # Minimal usage (begin + update + isConnected)
+│  ├─ AWM_Advanced/
+│  │   └─ AWM_Advanced.ino   # Advanced: LED, button, NTP, reconnect
+│  ├─ standard/
+│  │   └─ main.cpp           # Simple reference flow
+│  ├─ 30sVentana/
+│  │   └─ main.cpp           # 30s "boot window" captive portal
+│  └─ usedExample/
+│      └─ usedExample.ino    # Legacy usage example
+│
+├─ src/                      # Core library sources
+│  ├─ AyresWiFiManager.h     # Main header (public API)
+│  ├─ AyresWiFiManager.cpp   # Implementation
+│  └─ AWM_Logging.h          # Optional lightweight logging macros
+│
+├─ library.properties        # Arduino Library Manager metadata
+├─ library.json              # PlatformIO metadata
+├─ platformio.ini            # Example PIO project config
+├─ LICENSE                   # MIT License
+├─ README.md                 # Main documentation (English)
+└─ README.es.md              # Documentation in Spanish
 ```
 
 > Si querés mantener librerías locales fuera del repo, añadí rutas a `.gitignore` (ej.: `lib/AyresShell/`).
+
+---
+
+## 📂 Captive portal HTML
+
+Los archivos del portal (`index.html`, `success.html`, `error.html`) deben
+subirse al **LittleFS del sketch del usuario**:
+
+1. Copiá los archivos desde `data/` de esta librería al directorio `data/`
+   de **tu sketch**.
+2. Subilos al dispositivo:
+   - **Arduino IDE**: menú → *ESP32 LittleFS Data Upload*
+   - **PlatformIO**:  
+     ```bash
+     pio run --target uploadfs
+     ```
+
+> ⚠️ **Nota importante:**  
+> El `data/` en la raíz de esta librería es **solo de referencia/ejemplo**.  
+> No se sube automáticamente cuando compilás un sketch.
 
 ---
 
