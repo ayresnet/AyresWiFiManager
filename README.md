@@ -4,8 +4,7 @@
 
 [![GitHub stars](https://img.shields.io/github/stars/ayresnet/AyresWiFiManager?style=social)](https://github.com/ayresnet/AyresWiFiManager/stargazers)
 
-⭐ **Like this project? Give it a star!**  
-Stars encourage me to keep maintaining and improving this library. Thank you! 🙏
+⭐ **If you find this project useful, please consider giving it a star. Thank you.**
 
 ---
 
