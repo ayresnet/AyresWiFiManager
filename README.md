@@ -2,6 +2,13 @@
 
 # AyresWiFiManager (AWM)
 
+[![GitHub stars](https://img.shields.io/github/stars/ayresnet/AyresWiFiManager?style=social)](https://github.com/ayresnet/AyresWiFiManager/stargazers)
+
+⭐ **Like this project? Give it a star!**  
+Stars encourage me to keep maintaining and improving this library. Thank you! 🙏
+
+---
+
 <!-- Row 1: identity & project status -->
 ![AWM](https://img.shields.io/badge/AWM-Captive%20Portal-4361ee?style=flat-square)
 ![Release](https://img.shields.io/github/v/release/ayresnet/AyresWiFiManager?include_prereleases&label=release&style=flat-square)
