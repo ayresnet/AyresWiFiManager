@@ -42,5 +42,4 @@ jobs:
     - name: Build ESP32
       run: pio run -e esp32dev
 
-    - name: Build ESP8266
-      run: pio run -e test_esp8266
+

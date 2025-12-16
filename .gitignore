@@ -41,6 +41,8 @@ lib/AyresShell/
 
 # Source principal (ya está ignorado según necesidad)
 src/main.cpp
+src/*.txt
+
 
 # Backups
 *.zip.backup
