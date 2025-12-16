@@ -115,7 +115,7 @@
     .row label{min-width:82px; font-size:14px; color:#cbd6ef}
     .grow{flex:1}
     .switch{display:flex; align-items:center; gap:8px; font-size:14px; color:#cbd6ef}
-    .hint{font-size:12px; color:var(--muted); margin:6px 0 0 0}
+    .hint{font-size:12px; color:#9fb0cf; margin:6px 0 0 0}
     .footer{
       position:sticky; bottom:0; z-index:10;
       padding:10px 0 0 0; margin-top:8px;
@@ -124,7 +124,7 @@
     .footer .btn.primary{width:100%}
     code{background:#0d1426; border:1px solid #223255; padding:2px 6px; border-radius:6px}
     .copyright{
-      text-align:center; font-size:11px; color:var(--muted);
+      text-align:center; font-size:11px; color:#9fb0cf;
       margin:12px 8px 28px;
       padding-bottom: max(22px, env(safe-area-inset-bottom));
     }
@@ -180,7 +180,7 @@
 
       <div class="badges">
         <span class="badge">Portal</span>
-        <span class="badge version" id="ver">v2.0.0</span>
+        <span class="badge version" id="ver">v?</span>
       </div>
     </div>
 
@@ -261,7 +261,8 @@
 
   <script>
     (function(){
-      const VERSION = "2.0.0";
+      // SIN hardcode: la versión real viene del firmware via /info
+      let VERSION = null;
       const SHOW_QUALITY = true;
       const AUTO_MS = 30000; // 30 s
 
@@ -275,17 +276,50 @@
         confirm: $('#confirm'), btnErase: $('#btn-erase'), eraseMsg: $('#erase-msg'), btnReload: $('#btn-reload')
       };
 
-      // Pintar versión / textos
-      if (els.ver) els.ver.textContent = 'v' + VERSION;
-      if (vf) vf.textContent = 'v' + VERSION;
-
       // Texto dinámico del auto-scan
       const autoTxt = document.getElementById('autoTxt');
       if (autoTxt) autoTxt.textContent = `Auto ${AUTO_MS/1000}s`;
 
-      // Info AP/host
+      // Fallback inmediato hasta que llegue /info
+      if (els.ver) els.ver.textContent = 'v?';
+      if (vf)      vf.textContent      = 'v?';
       els.apHost.textContent = 'AP: ' + (location.hostname || '192.168.4.1');
       els.portalUrl.textContent = 'http://' + (location.host || '192.168.4.1');
+
+      async function loadInfo(){
+        try{
+          const resp = await fetch('/info', { cache:'no-store' });
+          if (!resp.ok) throw 0;
+          const info = await resp.json();
+
+          // Versión del firmware (AWM)
+          VERSION = info.version || null;
+          if (els.ver) els.ver.textContent = 'v' + (VERSION || '?');
+          if (vf)      vf.textContent      = 'v' + (VERSION || '?');
+
+          // Mostrar: AP: <host> (<ip>)
+          let host = info.host || null;
+          let ip   = info.ap_ip || null;
+
+          // Fallback: si no vino ap_ip, intento sacar IP de la URL actual
+          if (!ip && typeof location !== 'undefined' && location.host) {
+            const maybeIp = location.host.split(':')[0];
+            if (/^\d+\.\d+\.\d+\.\d+$/.test(maybeIp)) ip = maybeIp;
+          }
+
+          //if (info && info.host) {
+          //  els.apHost.textContent = 'AP: ' + info.host;
+          //}
+          if (host || ip) {
+            let label = 'AP: ';
+            if (host) label += host;
+            if (ip)   label += (host ? ' ' : '') + '(' + ip + ')';
+            els.apHost.textContent = label;
+          }
+        }catch(e){
+          // deja los fallbacks
+        }
+      }
 
       function rssiLevel(rssi){
         if (rssi >= -50) return 4;
@@ -485,6 +519,7 @@
       })();
 
       // Primer ciclo
+      loadInfo(); // <-- trae versión AWM desde el firmware
       scan();
     })();
   </script>

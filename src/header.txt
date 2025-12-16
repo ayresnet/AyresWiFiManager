@@ -1,0 +1,210 @@
+/*
+ *  SPDX-License-Identifier: MIT
+ *  AyresWiFiManager — API pública (Header)
+ *  ---------------------------------------------------------------------------
+ *  Archivo:     AyresWiFiManager.h
+ *  Versión:     2.2.0
+ *  Autor:       Daniel C. Salgado — AyresNet
+ *  Licencia:    MIT
+ *  Proyecto:    https://github.com/AyresNet/AyresWiFiManager
+ *
+ *  DESCRIPCIÓN GENERAL
+ *  ---------------------------------------------------------------------------
+ *  AyresWiFiManager es una librería de provisión Wi-Fi para ESP32/ESP8266,
+ *  orientada a producción. Incluye portal cautivo (SoftAP + DNS "catch-all"),
+ *  almacenamiento de credenciales en LittleFS, políticas de fallback,
+ *  UX de hardware (LED de estado + botón), reconexión automática con
+ *  backoff/ventana de intento, verificación de Internet y sincronización
+ *  de hora robusta (NTP con rotación/tiempos de espera y, en ESP32, fallback
+ *  por HTTP Date). Pensada para escenarios domésticos y flotas.
+ *
+ *  CARACTERÍSTICAS CLAVE
+ *  ---------------------------------------------------------------------------
+ *  - Portal cautivo:
+ *      SoftAP + DNS "catch-all"; UI estática desde LittleFS (index/success/error).
+ *      Endpoints JSON para escaneo de redes e información del dispositivo.
+ *  - Provisión segura y simple:
+ *      POST /save guarda SSID/clave en /wifi.json y reinicia.
+ *      POST /erase borra JSONs respetando una whitelist.
+ *  - Conectividad resiliente:
+ *      Políticas: NO_CREDENTIALS_ONLY (por defecto), ON_FAIL,
+ *      SMART_RETRIES, BUTTON_ONLY, NEVER.
+ *      Backoff de reconexión (10 s por defecto) y ventana de intento (5 s).
+ *      Convivencia con un AP externo sin derribar el SoftAP interno.
+ *  - UX de hardware:
+ *      Patrones de LED; botón único: 2–5 s abre portal; ≥5 s borra credenciales.
+ *  - Tiempo y reachability:
+ *      Sincronización NTP con rotación de servidores/timeout.
+ *      Fallback HTTP Date (ESP32) vía settimeofday().
+ *      Chequeo de Internet por HTTP 204 (generate_204).
+ *
+ *  RUTAS HTTP (servidas localmente)
+ *  ---------------------------------------------------------------------------
+ *    GET  /                   -> index.html
+ *    POST /save               -> guarda credenciales y reinicia
+ *    POST /erase              -> borra archivos JSON (respetando whitelist)
+ *    GET  /scan  o /scan.json -> lista Wi-Fi: [{ "ssid","rssi","secure" }]
+ *    GET  /info               -> { name, version, version_code, ap, host, ap_ip }
+ *    Redirecciones cautivas: /generate_204, /gen_204, /hotspot-detect.html,
+ *                            /connecttest.txt, /ncsi.txt, /fwlink  -> 302 a /
+ *
+ *  API PÚBLICA — REFERENCIA DETALLADA
+ *  ---------------------------------------------------------------------------
+ *
+ *  📌 CICLO DE VIDA
+ *  ----------------
+ *  begin()
+ *    Inicializa Wi-Fi, monta LittleFS (en ESP32 auto-formatea si falla),
+ *    carga credenciales de /wifi.json y prepara estado interno.
+ *
+ *  run()
+ *    Flujo inicial: maneja semántica del botón, intenta STA si hay credenciales
+ *    y abre portal según la política de fallback. Puede sincronizar hora en
+ *    la primera conexión exitosa.
+ *
+ *  update()
+ *    Llamar en loop(); atiende HTTP del portal, DNS cautivo, FSM del LED y
+ *    timeouts del portal. NOTA: update() NO dispara reconexiones por sí solo.
+ *
+ *  📌 PORTAL Y AP
+ *  --------------
+ *  setAPCredentials(ssid, pass)
+ *    Define SSID/clave del AP del portal.
+ *
+ *  setHostname(host)
+ *    Hostname del dispositivo (y mDNS donde aplique).
+ *
+ *  setHtmlPathPrefix("/awm")
+ *    Prefijo para servir UI estática desde LittleFS.
+ *
+ *  setCaptivePortal(bool enable)         // por defecto: true
+ *  setPortalTimeout(segundos)            // 0 = ilimitado
+ *  setAPClientCheck(bool enable)         // mantiene portal si hay clientes en AP
+ *  setWebClientCheck(bool enable)        // mantiene portal con actividad HTTP (defecto: true)
+ *
+ *  openPortal() / closePortal()
+ *    Inicia/detiene AP + DNS + HTTP del portal. Si el AP externo está activo
+ *    (ver abajo), closePortal() NO apaga el SoftAP.
+ *
+ *  isPortalActive()
+ *    Indica si el portal cautivo está activo.
+ *
+ *  📌 POLÍTICAS DE FALLBACK Y BOTÓN
+ *  --------------------------------
+ *  setFallbackPolicy(policy)
+ *    ON_FAIL              -> abre portal si falla la conexión.
+ *    NO_CREDENTIALS_ONLY  -> abre portal solo si falta /wifi.json (por defecto).
+ *    SMART_RETRIES        -> abre tras N fallos en una ventana temporal.
+ *    BUTTON_ONLY / NEVER  -> control manual / nunca automático.
+ *
+ *  setSmartRetries(maxRetries, windowMs)
+ *    Configura SMART_RETRIES (ej.: 3 fallos en 60 s).
+ *
+ *  enableButtonPortal(bool enable)
+ *    Botón: 2–5 s abre portal; ≥5 s borra credenciales y reinicia.
+ *
+ *  📌 RECONEXIÓN Y AP EXTERNO
+ *  --------------------------
+ *  setReconnectBackoffMs(ms)              // defecto: 10000 ms
+ *    Intervalo mínimo entre intentos de reconexión mientras estás desconectado.
+ *
+ *  setReconnectAttemptMs(ms)              // defecto: 5000 ms
+ *    Duración máxima de un intento de conexión (espera WL_CONNECTED).
+ *
+ *  setExternalApActive(bool enable)       // defecto: false
+ *    Indica que se preserve el SoftAP al cerrar el portal (para correr TU
+ *    servidor Web en paralelo). El manager ajusta WIFI_AP o WIFI_AP_STA según caso.
+ *
+ *  isExternalApActive()
+ *    Devuelve si la preservación de AP externo está activa.
+ *
+ *  setAutoReconnect(bool enable)          // defecto: true
+ *    Activa/desactiva la reconexión automática periódica.
+ *
+ *  reintentarConexionSiNecesario()
+ *    Llamar periódicamente (p. ej., cada 1 s). Si estás desconectado y se
+ *    cumplió el backoff, lanza UN intento que dura hasta reconnectAttemptMs.
+ *    Si hay portal/AP activo, usa WIFI_AP_STA para reconectar SIN bajar el AP.
+ *
+ *  forzarReconexion()
+ *    Disparo inmediato (ignora backoff). Útil tras cerrar portal/AP o luego
+ *    de guardar credenciales nuevas.
+ *
+ *  📌 ESTADO Y UTILIDADES
+ *  ----------------------
+ *  isConnected()                -> ¿WL_CONNECTED?
+ *  hayInternet()                -> Chequeo HTTP 204 (con Wi-Fi OK)
+ *  getSignalStrength()          -> RSSI actual
+ *  getTimestamp()               -> ms desde epoch Unix (0 si no sincronizada)
+ *  tieneCredenciales()          -> ¿existe /wifi.json válido?
+ *
+ *  // Ayudas de escaneo (con throttling interno)
+ *  scanRedDetectada()           -> true si el SSID guardado está visible.
+ *  SCAN_INTERVAL_MS             -> 15000 ms (mínimo entre escaneos en background)
+ *  SCAN_CACHE_MS                -> 1500 ms  (ventana de cache del último escaneo)
+ *
+ *  📌 UX DE HARDWARE
+ *  -----------------
+ *  setLedAuto(bool enable)      // por defecto: true
+ *  setLedPatternManual(pat)     // fuerza patrón (ON, BLINK_SLOW, etc.)
+ *
+ *  📌 SEGURIDAD Y BORRADO SEGURO
+ *  -----------------------------
+ *  setProtectedJsons({nombres}) // JSONs que NO se borran con /erase
+ *
+ *  QUICK START
+ *  ---------------------------------------------------------------------------
+ *    @code
+ *      #include <AyresWiFiManager.h>
+ *      AyresWiFiManager wifi;
+ *
+ *      void setup() {
+ *        wifi.setAPCredentials("ayreswifimanager", "123456789");
+ *        wifi.setHtmlPathPrefix("/awm");
+ *        wifi.setPortalTimeout(300);
+ *        wifi.setAPClientCheck(true);
+ *        wifi.setWebClientCheck(true);
+ *        wifi.begin();
+ *        wifi.run();
+ *      }
+ *
+ *      void loop() {
+ *        wifi.update();                      // portal/DNS/LED/timeouts
+ *        wifi.reintentarConexionSiNecesario(); // backoff + ventana de intento
+ *      }
+ *    @endcode
+ *
+ *  AP+STA CON UI EXTERNA (ejemplo)
+ *  ---------------------------------------------------------------------------
+ *    @code
+ *      wifi.setExternalApActive(true);   // mantené el AP para tu WebServer propio
+ *      wifi.openPortal();                // levanta AP+DNS+HTTP
+ *      wifi.closePortal();               // detiene DNS/HTTP; AP queda activo
+ *      // Tu WebServer atiende en 80 mientras AWM puede reintentar STA:
+ *      wifi.reintentarConexionSiNecesario(); // usa WIFI_AP_STA durante intentos
+ *    @endcode
+ *
+ *  DISEÑO Y COMPATIBILIDAD
+ *  ---------------------------------------------------------------------------
+ *  ESP32: temporización FreeRTOS (vTaskDelay/xTaskGetTickCount), esp_timer vía
+ *         AyresTimer para timeout del portal; ahorro de energía Wi-Fi desactivado.
+ *         LittleFS.begin(true) auto-formatea si falla el montaje.
+ *  ESP8266: temporización con millis()/delay(); LittleFS.begin(); semántica similar.
+ *
+ *  OPERACIÓN Y RENDIMIENTO
+ *  ---------------------------------------------------------------------------
+ *  - Evitá escanear en exceso: SCAN_INTERVAL_MS lo limita en background.
+ *  - Cacheá respuestas JSON pequeñas cuando sea apropiado.
+ *  - Definí whitelist JSON antes de /erase para proteger archivos críticos.
+ *
+ *  CHANGELOG (semver)
+ *  ---------------------------------------------------------------------------
+ *  2.2.0  NTP con rotación/timeouts; fallback HTTP Date (ESP32); TZ "UTC0".
+ *  2.1.0  Migración ESP32 a ticks FreeRTOS/esp_timer; FSM LED/botón refinada.
+ *  2.0.x  Políticas de fallback; tuning de reconexión; whitelist JSON; AP externo.
+ *
+ *  LEGAL
+ *  ---------------------------------------------------------------------------
+ *  Licencia MIT. Uso bajo tu responsabilidad. Revisá regulaciones sobre
+ *  portales cautivos aplicables en tu región si corresponde.
+ */

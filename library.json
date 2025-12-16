@@ -1,23 +1,49 @@
 {
   "name": "AyresWiFiManager",
-  "version": "2.0.2",
+  "version": "2.2.1",
   "description": "AyresWiFiManager (AWM): a modern WiFiManager-style alternative for ESP32/ESP8266 with a captive portal, LittleFS-stored credentials, NTP, and a status LED.",
   "keywords": "wifi,wifimanager,captive-portal,esp32,esp8266,littlefs,dns,webserver,ntp,iot",
   "authors": [
-    { "name": "Daniel Salgado", "maintainer": true, "url": "https://github.com/ayresnet" },
-    { "name": "AyresNet" }
+    {
+      "name": "Daniel Salgado",
+      "maintainer": true,
+      "url": "https://github.com/ayresnet"
+    },
+    {
+      "name": "AyresNet"
+    }
   ],
   "license": "MIT",
   "homepage": "https://github.com/ayresnet/AyresWiFiManager",
-  "repository": { "type": "git", "url": "https://github.com/ayresnet/AyresWiFiManager.git" },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ayresnet/AyresWiFiManager.git"
+  },
   "frameworks": "arduino",
-  "platforms": ["espressif32", "espressif8266"],
-  "headers": ["AyresWiFiManager.h"],
-  "dependencies": [
-    { "name": "ArduinoJson", "owner": "bblanchon", "version": "^6.21.2" }
+  "platforms": [
+    "espressif32",
+    "espressif8266"
   ],
-  "examples": ["examples/*/*"],
+  "headers": [
+    "AyresWiFiManager.h"
+  ],
+  "dependencies": [
+    {
+      "name": "ArduinoJson",
+      "owner": "bblanchon",
+      "version": "^6.21.2"
+    }
+  ],
+  "examples": [
+    "examples/*/*"
+  ],
   "export": {
-    "exclude": [".github", "test", "docs", "extras", "*.zip"]
+    "exclude": [
+      ".github",
+      "test",
+      "docs",
+      "extras",
+      "*.zip"
+    ]
   }
 }
