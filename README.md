@@ -5,6 +5,7 @@
 <!-- Row 1: identity & project status -->
 ![AWM](https://img.shields.io/badge/AWM-Captive%20Portal-4361ee?style=flat-square)
 ![Release](https://img.shields.io/github/v/release/ayresnet/AyresWiFiManager?include_prereleases&label=release&style=flat-square)
+![Build Status](https://github.com/ayresnet/AyresWiFiManager/actions/workflows/ci.yml/badge.svg)
 ![License](https://img.shields.io/github/license/ayresnet/AyresWiFiManager?style=flat-square)
 ![Issues](https://img.shields.io/github/issues/ayresnet/AyresWiFiManager?style=flat-square)
 
