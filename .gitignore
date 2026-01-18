@@ -47,3 +47,6 @@ src/*.txt
 # Backups
 *.zip.backup
 *.tar.gz.backup
+
+# Scripts internos (no distribuir)
+generate_gzip.py

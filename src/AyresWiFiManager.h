@@ -184,6 +184,7 @@
 #include <DNSServer.h>
 #include <FS.h>
 #include <LittleFS.h>
+#include <functional> // Necesario para std::function
 #include <initializer_list>
 #include <vector>
 
@@ -266,6 +267,14 @@ public:
   void setReconnectAttemptMs(uint32_t ms);
   void setExternalApActive(bool active);
   bool isExternalApActive() const;
+
+  // ==== Busy Callback (para mantener la UI viva durante bloqueos) ====
+  void setBusyCallback(std::function<void()> cb);
+
+  // ==== Credential Encryption (AES-128) ====
+  void enableCredentialEncryption(const char *aes_key); // 16 bytes for AES-128
+  void disableCredentialEncryption();
+  bool isEncryptionEnabled() const;
 
 private:
   // ---------- portal AP/DNS/HTTP ----------
@@ -380,12 +389,24 @@ private:
   // AP externo
   bool externalApActive = false;
 
+  // Credential encryption
+  bool _encryptionEnabled = false;
+  uint8_t _aesKey[16]; // AES-128 key
+  String encryptString(const String &plaintext);
+  String decryptString(const String &ciphertext);
+  String base64Encode(const uint8_t *data, size_t len);
+  bool base64Decode(const String &b64, uint8_t *out, size_t *outLen);
+
 #if defined(ESP32)
   // ---- Timers ESP32 (Native esp_timer) ----
   esp_timer_handle_t _portalTimer = nullptr;
   esp_timer_handle_t _scanTimer = nullptr;
+
   volatile bool _portalTimeoutExpired = false;
 #endif
+
+  // Callback de actividad (Busy Loop)
+  std::function<void()> _busyCallback = nullptr;
 };
 
 #endif // AYRES_WIFI_MANAGER_H
