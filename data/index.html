@@ -331,6 +331,42 @@
       flex: 1
     }
 
+    .password-wrapper {
+      position: relative;
+      flex: 1;
+      display: flex;
+      align-items: center;
+    }
+
+    .password-wrapper .input {
+      padding-right: 42px;
+    }
+
+    .eye-icon {
+      position: absolute;
+      right: 12px;
+      width: 20px;
+      height: 20px;
+      cursor: pointer;
+      opacity: 0.6;
+      transition: opacity 0.2s;
+      user-select: none;
+    }
+
+    .eye-icon:hover {
+      opacity: 1;
+    }
+
+    .eye-icon svg {
+      width: 100%;
+      height: 100%;
+      stroke: var(--text);
+      fill: none;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
     .switch {
       display: flex;
       align-items: center;
@@ -507,13 +543,20 @@
 
           <div class="row">
             <label for="password">Password</label>
-            <input id="password" class="input grow" name="password" type="password" required minlength="8"
-              placeholder="Contraseña" />
-          </div>
-
-          <div class="row">
-            <label></label>
-            <label class="switch"><input id="show" type="checkbox" /> Mostrar contraseña</label>
+            <div class="password-wrapper">
+              <input id="password" class="input" name="password" type="password" required minlength="8"
+                placeholder="Contraseña" />
+              <span class="eye-icon" id="toggle-password" title="Mostrar/Ocultar contraseña">
+                <svg id="eye-open" viewBox="0 0 24 24" style="display: none;">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                  <circle cx="12" cy="12" r="3"></circle>
+                </svg>
+                <svg id="eye-closed" viewBox="0 0 24 24">
+                  <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                  <line x1="1" y1="1" x2="23" y2="23"></line>
+                </svg>
+              </span>
+            </div>
           </div>
 
           <p class="hint">Las credenciales se guardan en el dispositivo y se reinicia para conectar.</p>
@@ -734,7 +777,18 @@
         els.pass.focus();
       });
 
-      els.show.addEventListener('change', () => { els.pass.type = els.show.checked ? 'text' : 'password'; });
+      // Toggle password visibility con ícono de ojo
+      const togglePassword = document.getElementById('toggle-password');
+      const eyeOpen = document.getElementById('eye-open');
+      const eyeClosed = document.getElementById('eye-closed');
+      if (togglePassword && eyeOpen && eyeClosed) {
+        togglePassword.addEventListener('click', () => {
+          const isPassword = els.pass.type === 'password';
+          els.pass.type = isPassword ? 'text' : 'password';
+          eyeOpen.style.display = isPassword ? 'block' : 'none';
+          eyeClosed.style.display = isPassword ? 'none' : 'block';
+        });
+      }
 
       els.form.addEventListener('submit', () => {
         els.btnSave.disabled = true;
