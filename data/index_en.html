@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="es">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta
@@ -438,13 +438,13 @@
 
       <div class="card">
         <section class="sec">
-          <h2>Redes disponibles</h2>
+          <h2>Available networks</h2>
           <div class="toolbar">
             <input
               id="filter"
               class="input"
               type="search"
-              placeholder="Filtrar SSID…"
+              placeholder="SSID filtering…"
               inputmode="search"
             />
             <button id="btn-scan" class="btn" type="button">Rescan</button>
@@ -461,7 +461,7 @@
         </section>
 
         <section class="sec">
-          <h2>Conectar</h2>
+          <h2>Connect</h2>
           <form id="form" method="POST" action="/save" autocomplete="off">
             <div class="row">
               <label for="ssid">SSID</label>
@@ -470,7 +470,7 @@
                 class="input grow"
                 name="ssid"
                 required
-                placeholder="Nombre de la red"
+                placeholder="Network name"
               />
             </div>
 
@@ -483,7 +483,7 @@
                 type="password"
                 required
                 minlength="8"
-                placeholder="Contraseña"
+                placeholder="Password"
               />
             </div>
 
@@ -626,16 +626,16 @@
           return wrap;
         }
         function qualityTag(rssi) {
-          let text = "Mala",
+          let text = "Bad",
             cls = "bad";
           if (rssi >= -60) {
-            text = "Buena";
+            text = "Good";
             cls = "good";
           } else if (rssi >= -67) {
-            text = "Moderada";
+            text = "Moderate";
             cls = "mid";
           } else if (rssi >= -75) {
-            text = "Débil";
+            text = "Weak";
             cls = "weak";
           }
           const span = document.createElement("span");
@@ -770,7 +770,7 @@
 
             try {
               const body = new URLSearchParams();
-              body.set("confirm", "BORRAR");
+              body.set("confirm", "DELETE");
               await fetch("/erase", {
                 method: "POST",
                 headers: {
