@@ -919,16 +919,20 @@ void AyresWiFiManager::handleSave() {
   serializeJson(doc, file);
   file.close();
 
-  File success = LittleFS.open(htmlPathPrefix + "success.html", "r");
-  if (success) {
-    server.send(200, "text/html", success.readString());
-    success.close();
-  } else {
-    // Fallback: Embedded GZIP
-    server.sendHeader("Content-Encoding", "gzip");
-    server.send_P(200, "text/html", (const char *)SUCCESS_HTML_GZ,
-                  SUCCESS_HTML_GZ_LEN);
+  String successPath = htmlPathPrefix + "success.html";
+  if (LittleFS.exists(successPath)) {
+    File success = LittleFS.open(successPath, "r");
+    if (success) {
+      server.send(200, "text/html", success.readString());
+      success.close();
+      return;
+    }
   }
+
+  // Fallback: Embedded GZIP
+  server.sendHeader("Content-Encoding", "gzip");
+  server.send_P(200, "text/html", (const char *)SUCCESS_HTML_GZ,
+                SUCCESS_HTML_GZ_LEN);
 
   AWM_sleep_ms(1000);
   ESP.restart();
@@ -1077,16 +1081,20 @@ void AyresWiFiManager::handleNotFound() {
 }
 
 void AyresWiFiManager::mostrarPaginaError(const String &mensajeFallback) {
-  File errorFile = LittleFS.open(htmlPathPrefix + "error.html", "r");
-  if (errorFile) {
-    server.send(500, "text/html", errorFile.readString());
-    errorFile.close();
-  } else {
-    // Fallback: Embedded GZIP
-    server.sendHeader("Content-Encoding", "gzip");
-    server.send_P(500, "text/html", (const char *)ERROR_HTML_GZ,
-                  ERROR_HTML_GZ_LEN);
+  String errPath = htmlPathPrefix + "error.html";
+  if (LittleFS.exists(errPath)) {
+    File errorFile = LittleFS.open(errPath, "r");
+    if (errorFile) {
+      server.send(500, "text/html", errorFile.readString());
+      errorFile.close();
+      return;
+    }
   }
+
+  // Fallback: Embedded GZIP
+  server.sendHeader("Content-Encoding", "gzip");
+  server.send_P(500, "text/html", (const char *)ERROR_HTML_GZ,
+                ERROR_HTML_GZ_LEN);
 }
 
 /* ================================= CREDENCIALES
