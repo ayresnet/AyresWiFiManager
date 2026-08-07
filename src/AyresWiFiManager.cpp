@@ -71,20 +71,15 @@
  */
 
 #include "AyresWiFiManager.h"
-#include "AWM_Logging.h"
 #include "AWM_html_gz.h"
-#include "AyresWiFiManager.h"
+#include "AyresLog.h"
 #include <ArduinoJson.h>
 
-// Mapping logic to standard logging
-#define AYLOG_E AWM_LOGE
-#define AYLOG_W AWM_LOGW
-#define AYLOG_I AWM_LOGI
-#define AYLOG_D AWM_LOGD
-#define AYLOG_V AWM_LOGV
+// Macros directas de AyresLog son usadas en el código, no hace falta mapeo
 
 #if defined(ESP32)
 #include <HTTPClient.h>
+#include <esp_task_wdt.h> // Watchdog de hardware
 #include <esp_wifi.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -524,6 +519,8 @@ String AyresWiFiManager::decryptString(const String &ciphertext) {
   return result;
 }
 
+String AyresWiFiManager::getWiFiPass() const { return password; }
+
 /* ================================ BEGIN / RUN
  * ================================= */
 void AyresWiFiManager::begin() {
@@ -558,13 +555,14 @@ void AyresWiFiManager::begin() {
 
 void AyresWiFiManager::run() {
   // Ventana para detectar hold con feedback LED
-  AYLOG_I("🔔 Botón: 2–5s abre portal | ≥5s borra credenciales");
+  AYLOG_I("🔔 Botón: >1s abre portal | ≥6s borra credenciales");
 
   uint32_t startTime = AWM_now_ms();
   bool pressed = false;
 
   ledSet(LedPattern::BLINK_SLOW); // guiño durante ventana
-  while (AWM_now_ms() - startTime < 2000) {
+  // Ampliar ventana de detección inicial a 3s
+  while (AWM_now_ms() - startTime < 3000) {
     if (digitalRead(buttonPin) == LOW) {
       pressed = true;
       break;
@@ -578,13 +576,13 @@ void AyresWiFiManager::run() {
     uint32_t t0 = AWM_now_ms();
     while (digitalRead(buttonPin) == LOW) {
       uint32_t held = AWM_now_ms() - t0;
-      if (held >= 5000) {
+      if (held >= 6000) { // Subir umbral de borrado a 6s
         setLedPatternManual(LedPattern::BLINK_TRIPLE);
-        AWM_LOGW("🩹 Hold ≥5s → borrar credenciales y reiniciar");
+        AWM_LOGW("🩹 Hold ≥6s → borrar credenciales y reiniciar");
         eraseCredentials();
         AWM_sleep_ms(900);
         ESP.restart();
-      } else if (held >= 2000) {
+      } else if (held >= 1000) { // Bajar umbral de portal a 1s
         setLedPatternManual(LedPattern::BLINK_DOUBLE);
       } else {
         setLedPatternManual(LedPattern::BLINK_FAST);
@@ -593,8 +591,9 @@ void AyresWiFiManager::run() {
       AWM_sleep_ms(10);
     }
     uint32_t held = AWM_now_ms() - t0;
-    if (held >= 2000 && held < 5000 && allowButtonPortal) {
-      AYLOG_I("🟢 Hold 2–5s → abrir portal");
+    // Permitir rango amplio: 1s a 6s
+    if (held >= 1000 && held < 6000 && allowButtonPortal) {
+      AYLOG_I("🟢 Hold 1–6s → abrir portal");
       setLedAuto(true);
       startPortal();
       return;
@@ -641,6 +640,9 @@ void AyresWiFiManager::run() {
 /* =================================== UPDATE
  * =================================== */
 void AyresWiFiManager::update() {
+#if defined(ESP32)
+  esp_task_wdt_reset(); // FEED DOG in inner loop
+#endif
   server.handleClient();
   if (dnsRunning)
     dns.processNextRequest();
@@ -756,7 +758,11 @@ void AyresWiFiManager::stopDNS() {
 void AyresWiFiManager::setupAP() {
   // FIXED: Usamos AP_STA de entrada para evitar que el cambio de modo
   // en handleScan() desconecte a los clientes.
-  WiFi.mode(WIFI_AP_STA);
+  if (WiFi.getMode() != WIFI_AP_STA) {
+    WiFi.mode(WIFI_AP_STA);
+    AWM_sleep_ms(100); // Give time for hardware to settle
+  }
+
   WiFi.softAPConfig(apIP, apGW, apSN);
   WiFi.softAP(apSSID.c_str(), apPASS.c_str());
 #if defined(ESP32)
@@ -781,6 +787,15 @@ void AyresWiFiManager::startPortal() {
   portalActive = true;
   portalStart = AWM_now_ms();
   lastHttpAccess = portalStart;
+
+#if defined(ESP32)
+  // CRITICAL: Reinit WDT before starting portal (WiFi mode changes can reset
+  // it)
+  esp_task_wdt_init(120, true);
+  esp_task_wdt_add(NULL);
+  AYLOG_I("✅ WDT re-inicializado en startPortal (120s)");
+#endif
+
   AYLOG_I("🌐 Portal cautivo activo en 192.168.4.1 (GET /, /scan, POST /save, "
           "POST /erase, GET /info)");
   ledSet(LedPattern::BLINK_SLOW);
@@ -860,6 +875,10 @@ bool AyresWiFiManager::portalHasTimedOut() {
 
 /* --------------------------------- HTTP --------------------------------- */
 void AyresWiFiManager::handleRoot() {
+#if defined(ESP32)
+  esp_task_wdt_reset(); // Feed WDT in HTTP handler
+#endif
+
   if (captivePortalRedirect())
     return;
 #if defined(ESP32)
@@ -919,20 +938,16 @@ void AyresWiFiManager::handleSave() {
   serializeJson(doc, file);
   file.close();
 
-  String successPath = htmlPathPrefix + "success.html";
-  if (LittleFS.exists(successPath)) {
-    File success = LittleFS.open(successPath, "r");
-    if (success) {
-      server.send(200, "text/html", success.readString());
-      success.close();
-      return;
-    }
+  File success = LittleFS.open(htmlPathPrefix + "success.html", "r");
+  if (success) {
+    server.send(200, "text/html", success.readString());
+    success.close();
+  } else {
+    // Fallback: Embedded GZIP
+    server.sendHeader("Content-Encoding", "gzip");
+    server.send_P(200, "text/html", (const char *)SUCCESS_HTML_GZ,
+                  SUCCESS_HTML_GZ_LEN);
   }
-
-  // Fallback: Embedded GZIP
-  server.sendHeader("Content-Encoding", "gzip");
-  server.send_P(200, "text/html", (const char *)SUCCESS_HTML_GZ,
-                SUCCESS_HTML_GZ_LEN);
 
   AWM_sleep_ms(1000);
   ESP.restart();
@@ -964,27 +979,31 @@ void AyresWiFiManager::handleErase() {
 
 void AyresWiFiManager::handleScan() {
 #if defined(ESP32)
+  esp_task_wdt_reset(); // Feed WDT before scan
   if (webClientCheck)
     restartPortalTimeout();
 #else
   lastHttpAccess = AWM_now_ms();
 #endif
 
-  AYLOG_I("🔍 Escaneando redes WiFi (SYNC, AP+STA)…");
+  AYLOG_I("🔍 Escaneando redes WiFi (ASYNC, AP+STA)…");
 
   WiFi.mode(WIFI_AP_STA);
   AWM_sleep_ms(50);
 
   int st = WiFi.scanComplete();
+
+  // Si hay scan en curso, informar que está en progreso
   if (st == WIFI_SCAN_RUNNING) {
-    WiFi.scanDelete();
+    server.send(202, "application/json", "{\"scanning\":true}");
+    AYLOG_I("⏳ Escaneo en progreso…");
+    return;
   }
 
-  // LED: marcar escaneo y mantener parpadeo breve post-scan
+  // LED: marcar escaneo
   scanning = true;
 
   // CACHE: Si escaneamos hace muy poco, devolvemos el último resultado
-  // Cache de 20 segundos para minimizar escaneos frecuentes
   if (AWM_now_ms() - lastScanAt < 20000 && !lastScanJson.isEmpty()) {
     server.send(200, "application/json", lastScanJson);
     scanning = false;
@@ -992,7 +1011,12 @@ void AyresWiFiManager::handleScan() {
     return;
   }
 
-  // SCAN RÁPIDO: minimize AP disruption con parámetros optimizados
+  // Si hay resultados viejos, limpiarlos
+  if (st >= 0) {
+    WiFi.scanDelete();
+  }
+
+  // SYNC SCAN RÁPIDO: Con WDT de 120s podemos bloquear ~8s sin problema
   AYLOG_I("🔍 Escaneando redes WiFi...");
 
 #if defined(ESP32)
@@ -1004,12 +1028,11 @@ void AyresWiFiManager::handleScan() {
   scanConf.show_hidden = false;
   scanConf.scan_type = WIFI_SCAN_TYPE_ACTIVE;
   scanConf.scan_time.active.min = 0;
-  scanConf.scan_time.active.max = 120; // 120ms max por canal = scan rápido
+  scanConf.scan_time.active.max = 120; // 120ms max por canal
 
-  esp_wifi_scan_start(&scanConf, true); // blocking pero rápido
+  esp_wifi_scan_start(&scanConf, true); // true = blocking (sync)
   int n = WiFi.scanComplete();
 #else
-  // ESP8266: scan estándar
   int n = WiFi.scanNetworks(false, false);
 #endif
 
@@ -1020,51 +1043,37 @@ void AyresWiFiManager::handleScan() {
     return;
   }
 
-  size_t cap = 64U + (size_t)n * 64U;
-  if (cap < 512U)
-    cap = 512U;
-  DynamicJsonDocument doc(cap);
+  AYLOG_I("✅ Escaneo OK: %d redes", n);
+
+  DynamicJsonDocument doc(2048);
   JsonArray arr = doc.to<JsonArray>();
 
   for (int i = 0; i < n; ++i) {
-    String s = WiFi.SSID(i);
-    if (!s.length())
-      continue;
-    JsonObject o = arr.createNestedObject();
-    o["ssid"] = s;
-    o["rssi"] = WiFi.RSSI(i);
-    // Multi-plataforma: ESP32 usa WIFI_AUTH_OPEN, ESP8266 usa AUTH_OPEN
 #if defined(ESP32)
-    o["secure"] = (WiFi.encryptionType(i) != WIFI_AUTH_OPEN);
-#elif defined(ESP8266)
-    o["secure"] = (WiFi.encryptionType(i) != AUTH_OPEN);
+    esp_task_wdt_reset(); // Feed WDT durante procesamiento
 #endif
-  }
-
-  WiFi.scanDelete();
-
-  // Mantener blink 1.5 s tras el scan
+    JsonObject obj = arr.createNestedObject();
+    obj["ssid"] = WiFi.SSID(i);
+    obj["rssi"] = WiFi.RSSI(i);
 #if defined(ESP32)
-  scanningUntil = 0; // no usamos comparaciones directas
-
-  // Use member esp_timer
-  if (_scanTimer) {
-    esp_timer_stop(_scanTimer);
-    esp_timer_start_once(_scanTimer, 1500ULL * 1000ULL);
-  } else {
-    scanning = false;
-  }
+    obj["encryption"] = (WiFi.encryptionType(i) == WIFI_AUTH_OPEN) ? 0 : 1;
 #else
-  scanning = false;
-  scanningUntil = AWM_now_ms() + 1500;
+    obj["encryption"] = (WiFi.encryptionType(i) == ENC_TYPE_NONE) ? 0 : 1;
 #endif
+  }
+
+  // Guardar en cache
+  lastScanJson = "";
+  serializeJson(arr, lastScanJson);
+  lastScanAt = AWM_now_ms();
+
+  // Borrar resultados
+  WiFi.scanDelete();
 
   String out;
   serializeJson(arr, out);
-  lastScanJson = out; // Update cache
-  lastScanAt = AWM_now_ms();
   server.send(200, "application/json", out);
-  AYLOG_I("✅ Escaneo OK: %d redes", (int)arr.size());
+  scanning = false;
 }
 
 void AyresWiFiManager::handleNotFound() {
@@ -1081,20 +1090,16 @@ void AyresWiFiManager::handleNotFound() {
 }
 
 void AyresWiFiManager::mostrarPaginaError(const String &mensajeFallback) {
-  String errPath = htmlPathPrefix + "error.html";
-  if (LittleFS.exists(errPath)) {
-    File errorFile = LittleFS.open(errPath, "r");
-    if (errorFile) {
-      server.send(500, "text/html", errorFile.readString());
-      errorFile.close();
-      return;
-    }
+  File errorFile = LittleFS.open(htmlPathPrefix + "error.html", "r");
+  if (errorFile) {
+    server.send(500, "text/html", errorFile.readString());
+    errorFile.close();
+  } else {
+    // Fallback: Embedded GZIP
+    server.sendHeader("Content-Encoding", "gzip");
+    server.send_P(500, "text/html", (const char *)ERROR_HTML_GZ,
+                  ERROR_HTML_GZ_LEN);
   }
-
-  // Fallback: Embedded GZIP
-  server.sendHeader("Content-Encoding", "gzip");
-  server.send_P(500, "text/html", (const char *)ERROR_HTML_GZ,
-                ERROR_HTML_GZ_LEN);
 }
 
 /* ================================= CREDENCIALES
@@ -1223,6 +1228,10 @@ bool AyresWiFiManager::connectToWiFi() {
       return true;
     }
     AWM_sleep_ms(250);
+#if defined(ESP32)
+    // Alimentar watchdog durante el intento de conexión inicial
+    esp_task_wdt_reset();
+#endif
   }
 
   AYLOG_W("⏱️ Tiempo agotado. No se pudo conectar.");
@@ -1240,65 +1249,114 @@ int AyresWiFiManager::getSignalStrength() { return WiFi.RSSI(); }
 void AyresWiFiManager::reintentarConexionSiNecesario() {
   if (!autoReconnect)
     return;
+
+  // ESTADO INTERNO (Static para mantener independencia del .h)
+  // Permite reconexión NO BLOQUEANTE.
+  static enum { RE_IDLE, RE_CONNECTING, RE_WAITING } reState = RE_IDLE;
+  static uint32_t reStart = 0;
+
+  // Si ya estamos conectados (por cualquier medio), reset y salir
   if (WiFi.status() == WL_CONNECTED) {
-    connected = true;
+    if (!connected) {
+      connected = true;
+      AYLOG_I("🔌 Conexión recuperada.");
+      sincronizarHoraNTP();
+    }
+    reState = RE_IDLE;
     return;
+  }
+
+  // FIX: Si hay clientes en el AP, permitir reconexión pero "muy relajada"
+  // (Throttled) para no saturar la radio y causar resets TG1WDT. En lugar de
+  // bloquear, forzamos un backoff dinámico mayor (ej. 60s).
+  uint32_t effectiveBackoff = reconnectBackoffMs;
+  if (WiFi.softAPgetStationNum() > 0) {
+    if (effectiveBackoff < 60000)
+      effectiveBackoff = 60000;
   }
 
   connected = false;
   uint32_t ahora = AWM_now_ms();
 
-  if (ahora - ultimoIntentoWiFi < reconnectBackoffMs)
-    return;
-  ultimoIntentoWiFi = ahora;
-
-  if (!ssid.isEmpty() && !password.isEmpty()) {
-    AYLOG_I("🔁 Intentando reconexión WiFi... (ventana=%lu ms, backoff=%lu ms)",
-            (unsigned long)reconnectAttemptMs,
-            (unsigned long)reconnectBackoffMs);
-
-    if (portalActive || externalApActive)
-      WiFi.mode(WIFI_AP_STA);
-    else
-      WiFi.mode(WIFI_STA);
-
-    WiFi.begin(ssid.c_str(), password.c_str());
-    uint32_t t0 = AWM_now_ms();
-    bool ok = false;
-
-    while (AWM_now_ms() - t0 < reconnectAttemptMs) {
-      if (WiFi.status() == WL_CONNECTED) {
-        ok = true;
-        break;
-      }
-      AWM_sleep_ms(250);
+  // Máquina de estados ASÍNCRONA
+  switch (reState) {
+  case RE_IDLE:
+    // Respetar tiempo de backoff efectivo
+    if (ahora - ultimoIntentoWiFi >= effectiveBackoff) {
+      reState = RE_CONNECTING;
     }
-    if (ok) {
+    break;
+
+  case RE_CONNECTING:
+    if (!ssid.isEmpty() && !password.isEmpty()) {
+      AYLOG_I("🔁 Intentando reconexión WiFi (ASYNC)... (ventana=%lu ms)",
+              (unsigned long)reconnectAttemptMs);
+
+      // FIX: Evitar cambio de modo si ya estamos en el correcto (ahorra tiempo
+      // CPU/Radio)
+      const wifi_mode_t curMode = WiFi.getMode();
+      const wifi_mode_t targetMode =
+          (portalActive || externalApActive) ? WIFI_AP_STA : WIFI_STA;
+
+      if (curMode != targetMode) {
+        WiFi.mode(targetMode);
+        AWM_sleep_ms(50); // Yield tras cambio de modo
+      }
+
+      // Iniciamos conexión SIN bloquear
+      WiFi.begin(ssid.c_str(), password.c_str());
+
+      // FIX: Yield extra para dar aire al stack WiFi
+      AWM_sleep_ms(10);
+
+      reStart = ahora;
+      reState = RE_WAITING;
+    } else {
+      // Sin credenciales, volvemos a idle
+      reState = RE_IDLE;
+    }
+    break;
+
+  case RE_WAITING:
+    // 1. Verificar éxito
+    if (WiFi.status() == WL_CONNECTED) {
       AYLOG_I("🔌 Reconectado a WiFi.");
       sincronizarHoraNTP();
       connected = true;
       failCount = 0;
       failWindowStart = 0;
+      reState = RE_IDLE;
       return;
     }
-    AYLOG_W("❌ Reconexión WiFi fallida.");
 
-    if (fallbackPolicy == FallbackPolicy::SMART_RETRIES) {
-      if (failWindowStart == 0 ||
-          (AWM_now_ms() - failWindowStart) > failWindowMs) {
-        failWindowStart = AWM_now_ms();
-        failCount = 0;
-      }
-      failCount++;
-      AYLOG_D("📉 SMART: fallos=%u/%u en %lu ms", failCount, maxFailRetries,
-              (unsigned long)(AWM_now_ms() - failWindowStart));
-      if (failCount >= maxFailRetries) {
-        AYLOG_W("🚪 SMART: abriendo portal por fallos acumulados");
-        startPortal();
-        failCount = 0;
-        failWindowStart = 0;
+    // 2. Verificar Timeout
+    if (ahora - reStart > reconnectAttemptMs) {
+      AYLOG_W("❌ Reconexión WiFi fallida (Timeout).");
+      ultimoIntentoWiFi = ahora; // Iniciar backoff
+      reState = RE_IDLE;
+
+      // Lógica SMART RETRIES (Mantenida idéntica)
+      if (fallbackPolicy == FallbackPolicy::SMART_RETRIES) {
+        if (failWindowStart == 0 || (ahora - failWindowStart) > failWindowMs) {
+          failWindowStart = ahora;
+          failCount = 0;
+        }
+        failCount++;
+        AYLOG_D("📉 SMART: fallos=%u/%u en %lu ms", failCount, maxFailRetries,
+                (unsigned long)(ahora - failWindowStart));
+        if (failCount >= maxFailRetries) {
+          AYLOG_W("🚪 SMART: abriendo portal por fallos acumulados");
+          startPortal();
+          failCount = 0;
+          failWindowStart = 0;
+        }
       }
     }
+    // Si no conecta ni da timeout, seguimos en WAITING (retorna al loop)
+#if defined(ESP32)
+    esp_task_wdt_reset();
+#endif
+    break;
   }
 }
 
@@ -1325,10 +1383,15 @@ bool AyresWiFiManager::scanRedDetectada() {
 
 void AyresWiFiManager::forzarReconexion() {
   AYLOG_I("🔄  Forzando reconexión…");
-  if (portalActive || externalApActive)
-    WiFi.mode(WIFI_AP_STA);
-  else
-    WiFi.mode(WIFI_STA);
+
+  const wifi_mode_t curMode = WiFi.getMode();
+  const wifi_mode_t targetMode =
+      (portalActive || externalApActive) ? WIFI_AP_STA : WIFI_STA;
+
+  if (curMode != targetMode) {
+    WiFi.mode(targetMode);
+    AWM_sleep_ms(50);
+  }
 
   WiFi.begin(ssid.c_str(), password.c_str());
   ultimoIntentoWiFi = AWM_now_ms();

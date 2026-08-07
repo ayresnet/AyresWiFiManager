@@ -426,12 +426,36 @@ size_t AyresShell::delPattern(const String &dirPath, const String &pattern) {
 size_t AyresShell::deltreeImpl(const String &dirPath, size_t &dirs,
                                size_t &files) {
   String dp = ensureAbs(dirPath);
+  // Ensure trailing slash for concatenation
+  if (!dp.endsWith("/"))
+    dp += "/";
+
   File dir = FS_IMPL.open(dp);
   if (!dir || !dir.isDirectory())
     return 0;
 
   for (File e = dir.openNextFile(); e; e = dir.openNextFile()) {
-    String p = e.name();
+    String name = e.name();
+    // Fix: If name is relative (no leading slash), prepend dirPath.
+    // Even if it has a leading slash, check if it starts with the parent dir.
+    // If e.name() is just "/file.txt" but we are in "/awm/", it's wrong if
+    // standard LittleFS yields absolute. However, safest bet: if it doesn't
+    // start with dp, prepend. NOTE: e.name() behavior varies by core.
+    String p;
+    if (name.startsWith("/")) {
+      if (name.startsWith(dp)) {
+        p = name; // Already full path
+      } else {
+        // Weird case: name starts with / but doesn't match parent.
+        // Could be relative to root? Or just the name with a slash?
+        // Let's assume it's just the name if it doesn't match parent path.
+        // Strip leading slash to be safe
+        p = dp + name.substring(1);
+      }
+    } else {
+      p = dp + name;
+    }
+
     if (e.isDirectory()) {
       e.close();
       deltreeImpl(p, dirs, files);
@@ -925,7 +949,7 @@ void AyresShell::handleLine(String line) {
   else if (CMD == "MV")
     cmd_mv(A(1), A(2));
   else if (CMD == "DELTREE")
-    cmd_deltree(A(1));
+    cmd_deltree(A(1), A(2));
   else if (CMD == "FORMAT")
     cmd_format_query();
   else if (CMD == "EDIT" || CMD == "ED")
@@ -944,19 +968,32 @@ void AyresShell::printPrompt() {
   Serial.print("> ");
 }
 
-// ===================== DELTREE ======================
-void AyresShell::cmd_deltree(const String &arg) {
-  if (!arg.length()) {
+void AyresShell::cmd_deltree(const String &arg1, const String &arg2) {
+  String pathArg;
+  bool force = false;
+
+  if (arg1 == "-f") {
+    force = true;
+    pathArg = arg2;
+  } else {
+    // Caso normal: solo directorio en arg1 (o arg1="-fdir" si no hubieran
+    // espacios, pero splitArgs separa) OJO: Si el usuario escribe por error
+    // "DELTREE -fdir" (pegado), arg1="-fdir". Mantenemos logica de backward
+    // compatibility por si acaso.
+    if (arg1.startsWith("-f") && arg1.length() > 2) {
+      force = true;
+      pathArg = arg1.substring(2);
+    } else {
+      pathArg = arg1;
+    }
+  }
+
+  pathArg.trim();
+  if (!pathArg.length()) {
     Serial.println(F("Uso: DELTREE <directorio>  |  DELTREE -f <directorio>"));
     return;
   }
-  bool force = false;
-  String pathArg = arg;
-  if (arg.startsWith("-f ")) {
-    force = true;
-    pathArg = arg.substring(3);
-  }
-  pathArg.trim();
+
   if (!pathArg.length()) {
     Serial.println(F("Uso: DELTREE <directorio>  |  DELTREE -f <directorio>"));
     return;

@@ -242,7 +242,7 @@ private:
   void cmd_mv(const String &a, const String &b);
   void cmd_format_query();
   void cmd_format_exec(bool yes);
-  void cmd_deltree(const String &arg);
+  void cmd_deltree(const String &arg1, const String &arg2 = "");
 
   // Internos
   void do_del(const String &arg);

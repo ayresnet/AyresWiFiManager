@@ -250,6 +250,7 @@ public:
   void reintentarConexionSiNecesario();
   bool hayInternet();
   bool tieneCredenciales() const;
+  String getWiFiPass() const;
 
   // ---------- utilidades extra ----------
   bool scanRedDetectada();
