@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: MIT
- * Ejemplo — AyresWiFiManager (ESP32/ESP8266)
+ * Ejemplo — AyresWiFiManager 2.3.0 (ESP32)
  * ---------------------------------------------------------------
  * @file       main.ino
  * @brief      Comportamiento de arranque:

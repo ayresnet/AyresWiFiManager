@@ -4,7 +4,7 @@
  *
  * Description:
  * ------------
- * Minimal example of using AyresWiFiManager v2.0.1 with ESP32/ESP8266.
+ * Minimal example of using AyresWiFiManager v2.3.0 with ESP32.
  *
  * Key Features:
  *  - If saved credentials are valid → connects automatically (STA mode).
@@ -12,7 +12,7 @@
  *
  * Requirements:
  * -------------
- * 1. Install AyresWiFiManager v2.0.1 (or higher).
+ * 1. Install AyresWiFiManager v2.3.0 (or higher).
  * 2. Prepare HTML files in LittleFS (upload with "ESP32 LittleFS Data Upload"
  *    or "pio run --target uploadfs" in PlatformIO). Place them in /data:
  *       - index.html   → main portal page
@@ -28,7 +28,6 @@
  * Compatibility:
  * --------------
  *  - ESP32 (Arduino core)
- *  - ESP8266 (Arduino core)
  *
  * Author:
  * -------
@@ -52,6 +51,8 @@ void setup() {
 
   // Initialize and attempt to connect using saved credentials
   awm.begin();
+  awm.setFallbackPolicy(AyresWiFiManager::FallbackPolicy::ON_FAIL);
+  awm.run();
 
   // If WiFi connects, print IP
   if (awm.isConnected()) {

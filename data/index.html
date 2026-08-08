@@ -478,10 +478,10 @@
     }
 
     .danger-zone {
-      background: #1a0f14;
-      border: 1px solid #402029;
-      padding: 12px;
-      border-radius: 12px;
+      background: linear-gradient(180deg, rgba(64, 32, 41, .28), rgba(26, 15, 20, .72));
+      border: 1px solid #51303a;
+      padding: 16px;
+      border-radius: 14px;
     }
 
     .danger-zone h3 {
@@ -494,10 +494,71 @@
       color: #ffc0c0
     }
 
+    .danger-actions {
+      display: grid;
+      gap: 12px;
+      margin-top: 14px;
+    }
+
+    .danger-action {
+      background: rgba(255, 255, 255, .025);
+      border: 1px solid #51303a;
+      border-radius: 12px;
+      padding: 14px;
+    }
+
+    .danger-action.critical {
+      border-color: #7a2634;
+      background: rgba(122, 31, 43, .1);
+    }
+
+    .danger-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 5px;
+      color: #fff0f2;
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .danger-copy {
+      margin: 0 0 12px;
+      color: #d9aeb5;
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .danger-confirm {
+      display: grid;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    .danger-confirm label {
+      color: #efc6cc;
+      font-size: 12px;
+    }
+
+    .danger-status {
+      min-height: 1.4em;
+      margin: 12px 0 0;
+      text-align: center;
+      color: #efc6cc;
+      font-size: 12px;
+    }
+
     .btn.danger {
       border-color: #6b1f2a;
       background: linear-gradient(135deg, #7a1f2b, #b63545);
       color: white;
+    }
+
+    .btn.danger-soft {
+      border-color: #68404a;
+      background: #2a1b20;
+      color: #ffd8de;
     }
 
     .btn.ghost {
@@ -579,8 +640,8 @@
           <div class="row">
             <label for="password">Password</label>
             <div class="password-wrapper">
-              <input id="password" class="input" name="password" type="password" required minlength="8"
-                placeholder="Contraseña" />
+              <input id="password" class="input" name="password" type="password"
+                placeholder="Contraseña (vacía para redes abiertas)" />
               <span class="eye-icon" id="toggle-password" title="Mostrar/Ocultar contraseña">
                 <svg id="eye-open" viewBox="0 0 24 24" style="display: none;">
                   <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
@@ -612,18 +673,41 @@
 
       <details class="accordion sec" style="border:none; margin-top:20px;">
         <summary style="font-size: 14px; color: var(--muted); justify-content: center;">
-          <span>Zona Peligrosa</span>
+          <span>Administración y recuperación</span>
         </summary>
         <div class="sec acc">
           <div class="danger-zone">
-            <h3>Eliminar Datos</h3>
-            <p class="hint">Esta acción borrará todas las configuraciones y reiniciará el dispositivo.</p>
-            <div class="row">
-              <button id="btn-erase" class="btn danger" type="button" style="width:100%">Borrar todo y reiniciar (Hold
-                3s)</button>
-              <input id="confirm" type="hidden" value="BORRAR">
+            <h3>Acciones de recuperación</h3>
+            <p class="hint">Elegí el alcance con cuidado. El dispositivo se reiniciará después de un borrado exitoso.</p>
+
+            <div class="danger-actions">
+              <div class="danger-action">
+                <div class="danger-title">
+                  <span>Restablecer Wi-Fi</span>
+                  <span class="pill">Recomendado</span>
+                </div>
+                <p class="danger-copy">Elimina únicamente <code>/wifi.json</code>. Los demás archivos y configuraciones permanecen intactos.</p>
+                <button id="btn-erase-wifi" class="btn danger-soft" type="button" style="width:100%">
+                  Eliminar credenciales Wi-Fi
+                </button>
+              </div>
+
+              <div class="danger-action critical">
+                <div class="danger-title">
+                  <span>Borrado total de JSON</span>
+                  <span class="pill">Irreversible</span>
+                </div>
+                <p class="danger-copy">Busca en todo LittleFS y elimina todos los archivos <code>.json</code>, incluido <code>/wifi.json</code>. No aplica la lista de archivos protegidos.</p>
+                <div class="danger-confirm">
+                  <label for="confirm-all">Escribí <strong>BORRAR TODO</strong> para habilitar esta acción.</label>
+                  <input id="confirm-all" class="input" type="text" autocomplete="off" spellcheck="false" placeholder="BORRAR TODO">
+                </div>
+                <button id="btn-erase-all" class="btn danger" type="button" style="width:100%" disabled>
+                  Eliminar todos los JSON
+                </button>
+              </div>
             </div>
-            <p id="erase-msg" class="hint" style="min-height:1.2em; text-align:center"></p>
+            <p id="erase-msg" class="danger-status" role="status" aria-live="polite"></p>
           </div>
         </div>
       </details>
@@ -635,7 +719,7 @@
       </section>
     </div>
 
-    <footer class="copyright">© 2025 AyresNet · <span id="ver-footer"></span></footer>
+    <footer class="copyright">© 2020-2026 AyresNet · <span id="ver-footer"></span></footer>
   </div>
 
   <script>
@@ -652,7 +736,8 @@
         auto: $('#auto'), btnScan: $('#btn-scan'), ssid: $('#ssid'), pass: $('#password'),
         show: $('#show'), form: $('#form'), btnSave: $('#btn-save'),
         apHost: $('#ap-host'), portalUrl: $('#portal-url'), ver: $('#ver'),
-        confirm: $('#confirm'), btnErase: $('#btn-erase'), eraseMsg: $('#erase-msg'), btnReload: $('#btn-reload')
+        btnEraseWifi: $('#btn-erase-wifi'), btnEraseAll: $('#btn-erase-all'),
+        confirmAll: $('#confirm-all'), eraseMsg: $('#erase-msg')
       };
 
       // Texto dinámico del auto-scan
@@ -812,6 +897,10 @@
         [...els.list.children].forEach(n => n.classList.remove('selected'));
         li.classList.add('selected');
         els.ssid.value = li.dataset.ssid || '';
+        const secure = li.dataset.secure === 'true';
+        els.pass.required = secure;
+        els.pass.minLength = secure ? 8 : 0;
+        if (!secure) els.pass.value = '';
         els.pass.focus();
       });
 
@@ -833,43 +922,58 @@
         els.btnSave.textContent = 'Guardando…';
       });
 
-      // Avanzadas: habilitar BORRAR
-      if (els.confirm && els.btnErase) {
-        // Simplify logic: Button enabled immediately for easier UX in this new layout
-        // or keep safety. Let's keep safety but simpler.
-        // For now, let's just make the button trigger strict check internally or removing strict check for "Premium UX" often relies on "Are you sure?" dialogs. 
-        // Reverting to direct click for simplicity as per "Premium" often means less friction.
-        // But user asked not to break functionality.
-        // Let's keep the confirm input hidden but auto-fill it to "BORRAR" to simulate "Easy Mode" 
-        // Actually, let's just enable the button.
-        if (els.btnErase) els.btnErase.disabled = false;
+      async function requestErase(scope, button) {
+        const originalText = button.textContent;
+        button.disabled = true;
+        button.textContent = 'Eliminando…';
+        els.btnEraseWifi.disabled = true;
+        els.btnEraseAll.disabled = true;
+        els.eraseMsg.textContent = scope === 'wifi'
+          ? 'Eliminando las credenciales Wi-Fi…'
+          : 'Buscando y eliminando archivos JSON…';
 
-        els.btnErase.addEventListener('click', async () => {
-          if (els.btnErase.disabled) return;
-          els.btnErase.disabled = true;
-          els.btnErase.textContent = 'Eliminando…';
-          if (els.eraseMsg) els.eraseMsg.textContent = 'Borrando credenciales y reiniciando…';
+        try {
+          const body = new URLSearchParams();
+          body.set('scope', scope);
+          body.set('confirm', scope === 'wifi' ? 'WIFI_ONLY' : 'DELETE_ALL_JSON');
+          if (scope === 'all') body.set('force', '1');
+          const response = await fetch('/erase', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body
+          });
+          const result = await response.json();
 
-          try {
-            const body = new URLSearchParams(); body.set('confirm', 'BORRAR');
-            await fetch('/erase', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-              body
-            });
-            if (els.btnReload) els.btnReload.style.display = 'inline-block';
-          } catch (e) {
-            console.error(e);
-            if (els.eraseMsg) els.eraseMsg.textContent = 'Error al solicitar borrado.';
-            els.btnErase.disabled = false;
-            els.btnErase.textContent = '🗑️ Borrar credenciales y reiniciar';
+          if (!response.ok || !result.ok) {
+            const failed = Number(result.failed || 0);
+            throw new Error(failed
+              ? `${failed} archivo(s) no pudieron eliminarse. Cerrá el proceso que los usa e intentá nuevamente.`
+              : 'El dispositivo rechazó la solicitud.');
           }
-        });
+
+          els.eraseMsg.textContent = `${result.removed || 0} archivo(s) eliminado(s). Reiniciando…`;
+        } catch (error) {
+          console.error(error);
+          els.eraseMsg.textContent = error.message || 'No se pudo completar el borrado.';
+          button.textContent = originalText;
+          els.btnEraseWifi.disabled = false;
+          els.btnEraseAll.disabled = els.confirmAll.value.trim().toUpperCase() !== 'BORRAR TODO';
+        }
       }
 
-      if (els.btnReload) {
-        els.btnReload.addEventListener('click', () => location.reload());
-      }
+      els.btnEraseWifi.addEventListener('click', () => {
+        const accepted = window.confirm('Se eliminará únicamente /wifi.json y el dispositivo se reiniciará. ¿Continuar?');
+        if (accepted) requestErase('wifi', els.btnEraseWifi);
+      });
+
+      els.confirmAll.addEventListener('input', () => {
+        els.btnEraseAll.disabled = els.confirmAll.value.trim().toUpperCase() !== 'BORRAR TODO';
+      });
+
+      els.btnEraseAll.addEventListener('click', () => {
+        if (els.btnEraseAll.disabled) return;
+        requestErase('all', els.btnEraseAll);
+      });
 
       // Acordeón suave
       (function initAccordion() {

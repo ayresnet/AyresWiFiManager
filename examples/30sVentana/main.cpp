@@ -1,6 +1,6 @@
 /*
  *  SPDX-License-Identifier: MIT
- *  Ejemplo — AyresWiFiManager (ESP32/ESP8266)
+ *  Ejemplo — AyresWiFiManager 2.3.0 (ESP32)
  *  ---------------------------------------------------------------
  *  @file      main.cpp
  *  @brief     Comportamiento de arranque:
@@ -15,7 +15,7 @@
 
 #include <Arduino.h>
 #include "AyresWiFiManager.h"
-#include "AWM_Logging.h"   // ← macros de log AWM_LOG*
+#include <AyresLog.h>
 
 // ───────── Objetos ─────────────────────────────────────────────
 AyresWiFiManager wifiManager;   // LED=2, BTN=0 (por defecto)

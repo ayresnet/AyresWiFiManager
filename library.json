@@ -1,8 +1,8 @@
 {
   "name": "AyresWiFiManager",
-  "version": "2.2.1",
-  "description": "AyresWiFiManager (AWM): a modern WiFiManager-style alternative for ESP32/ESP8266 with a captive portal, LittleFS-stored credentials, NTP, and a status LED.",
-  "keywords": "wifi,wifimanager,captive-portal,esp32,esp8266,littlefs,dns,webserver,ntp,iot",
+  "version": "2.3.0",
+  "description": "Wi-Fi provisioning and connectivity manager for ESP32 with a captive portal, LittleFS credentials and diagnostics.",
+  "keywords": "wifi,wifimanager,captive-portal,esp32,littlefs,dns,webserver,ntp,iot",
   "authors": [
     {
       "name": "Daniel Salgado",
@@ -20,10 +20,7 @@
     "url": "https://github.com/ayresnet/AyresWiFiManager.git"
   },
   "frameworks": "arduino",
-  "platforms": [
-    "espressif32",
-    "espressif8266"
-  ],
+  "platforms": "espressif32",
   "headers": [
     "AyresWiFiManager.h"
   ],
@@ -43,6 +40,7 @@
       "test",
       "docs",
       "extras",
+      "src/main.cpp",
       "*.zip"
     ]
   }

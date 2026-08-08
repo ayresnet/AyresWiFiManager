@@ -1,5 +1,5 @@
 /*
- *  iAlarma — Firmware de central de alarma ESP32 (Firebase RTDB + AP offline)
+ *  AyresLog — logging liviano para proyectos Arduino
  *  -------------------------------------------------------------------------
  *  Archivo   : AyresLog.h
  *  Versión   : 1.2.0
@@ -68,7 +68,7 @@
  *     build_flags =
  *       -DAYLOG_ENABLED=1
  *       -DAYLOG_LEVEL=4              ; DEBUG
- *       -DAYLOG_TAG=\"iAlarma\"
+ *       -DAYLOG_TAG=\"AWM\"
  *       -DAYLOG_SHOW_TS=1
  *       -DAYLOG_TS_MICROS=1
  *       -DAYLOG_RUNTIME_LEVEL=1
@@ -80,7 +80,7 @@
  *     build_flags =
  *       -DAYLOG_ENABLED=1
  *       -DAYLOG_LEVEL=4
- *       -DAYLOG_TAG=\"iAlarma\"
+ *       -DAYLOG_TAG=\"AWM\"
  *       -DAYLOG_ENABLE_P_MACROS=1
  *
  *     Uso:
@@ -96,7 +96,7 @@
  *     build_flags =
  *       -DAYLOG_ENABLED=1
  *       -DAYLOG_LEVEL=4
- *       -DAYLOG_TAG=\"iAlarma\"
+ *       -DAYLOG_TAG=\"AWM\"
  *       -DAYLOG_BACKEND_ESP=1
  *       -DAYLOG_RUNTIME_LEVEL=0      ; gating propio de ESP_LOG
  *       -DAYLOG_SHOW_TS=0            ; el IDF maneja su timestamp

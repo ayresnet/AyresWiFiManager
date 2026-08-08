@@ -1,5 +1,5 @@
 /*
- *  iAlarma — Firmware de central de alarma ESP32 (Firebase RTDB + AP offline)
+ *  AyresShell — consola serial opcional para proyectos Arduino
  *  -------------------------------------------------------------------------
  *  Archivo   : AyresShell.cpp
  *  Versión   : 1.3.1

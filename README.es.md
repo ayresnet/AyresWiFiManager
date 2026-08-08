@@ -1,126 +1,56 @@
-<div align="center">
+# AyresWiFiManager
 
-# AyresWiFiManager (AWM)
+[![Versión](https://img.shields.io/badge/versión-2.3.0-4361ee)](https://github.com/ayresnet/AyresWiFiManager)
+[![Plataforma](https://img.shields.io/badge/plataforma-ESP32-2ec27e?logo=espressif)](https://www.espressif.com/en/products/socs/esp32)
+[![Arduino](https://img.shields.io/badge/framework-Arduino-00979d?logo=arduino)](https://www.arduino.cc/)
+[![Licencia](https://img.shields.io/badge/licencia-MIT-6c757d)](LICENSE)
 
-<!-- Línea 1: identidad y estado del proyecto -->
-![AWM](https://img.shields.io/badge/AWM-Portal%20Cautivo-4361ee?style=flat-square)
-![Release](https://img.shields.io/github/v/release/ayresnet/AyresWiFiManager?include_prereleases&label=release&style=flat-square)
-![License](https://img.shields.io/github/license/ayresnet/AyresWiFiManager?style=flat-square)
-![Issues](https://img.shields.io/github/issues/ayresnet/AyresWiFiManager?style=flat-square)
+AyresWiFiManager (AWM) es una librería para provisionar y administrar la conectividad Wi-Fi de un ESP32. Reúne un portal cautivo, credenciales en LittleFS, políticas de fallback, reconexión, NTP y diagnóstico de campo detrás de una API sencilla para Arduino.
 
-<!-- Línea 2: plataformas y frameworks -->
-![ESP32](https://img.shields.io/badge/ESP32-supported-2ec27e?logo=espressif&logoColor=white&style=flat-square)
-![ESP8266](https://img.shields.io/badge/ESP8266-supported-2ec27e?logo=espressif&logoColor=white&style=flat-square)
-![Arduino](https://img.shields.io/badge/Arduino-Library-00979D?logo=arduino&logoColor=white&style=flat-square)
-![PlatformIO](https://img.shields.io/badge/PlatformIO-ready-f5822a?logo=platformio&logoColor=white&style=flat-square)
+[Read in English](README.md)
 
-<!-- Línea 3: características clave -->
-![LittleFS](https://img.shields.io/badge/LittleFS-OK-2ec27e?style=flat-square)
-![Captive Portal](https://img.shields.io/badge/Captive%20Portal-ON-4361ee?style=flat-square)
-![DNS catch-all](https://img.shields.io/badge/DNS-catch--all-4cc9f0?style=flat-square)
-![NTP](https://img.shields.io/badge/NTP-sync-4cc9f0?style=flat-square)
-![ArduinoJson](https://img.shields.io/badge/ArduinoJson-%5E6.21.2-6c757d?logo=json&logoColor=white&style=flat-square)
+## Características
 
-<!-- (Opcional) métricas -->
-<!-- ![Downloads](https://img.shields.io/github/downloads/ayresnet/AyresWiFiManager/total?style=flat-square) -->
+- Portal cautivo con SoftAP, DNS catch-all y rutas de detección de los sistemas operativos.
+- Interfaz adaptable servida desde LittleFS, con páginas GZIP embebidas como respaldo.
+- Escaneo de redes, provisión de credenciales y timeout de inactividad configurable.
+- Políticas explícitas: `ON_FAIL`, `NO_CREDENTIALS_ONLY`, `SMART_RETRIES`, `BUTTON_ONLY` y `NEVER`.
+- Reconexión no bloqueante con backoff y ventana de intento configurables.
+- Estado único de conectividad y datos de diagnóstico para cualquier proyecto.
+- Patrones automáticos de LED y acciones mediante botón físico.
+- Cifrado opcional de credenciales en reposo.
+- Logging y shell serial opcionales.
 
-</div>
+## Compatibilidad
 
-<div align="center" style="background-color: #f0f0f0; border: 2px solid #336699; padding: 15px; border-radius: 10px;">
-  <table>
-    <tr>
-      <td style="padding: 5px;">
-        <img src="https://res.cloudinary.com/dxunooptp/image/upload/v1756089447/awm01_vyzkbw.png" alt="Imagen 1" width="250">
-      </td>
-      <td style="padding: 5px;">
-        <img src="https://res.cloudinary.com/dxunooptp/image/upload/v1756089447/awm02_mvzmxr.png" alt="Imagen 2" width="250">
-      </td>
-      <td style="padding: 5px;">
-        <img src="https://res.cloudinary.com/dxunooptp/image/upload/v1756093584/imagen_2025-08-25_004621649_gpiecd.png" width="250">
-      </td>
-    </tr>
-  </table>
-</div>
+La versión 2.3.0 soporta oficialmente:
 
----
+- ESP32 con framework Arduino.
+- ArduinoJson 6.21.2 o posterior dentro de la versión mayor 6.
+- LittleFS, DNSServer, WebServer y HTTPClient del core Arduino para ESP32.
 
-📢 ¡Disponible en el Arduino IDE!
+ESP8266 no es un destino oficialmente soportado en 2.3.0. Se puede reconsiderar cuando exista CI específica y validación en hardware.
 
-Instalá AyresWiFiManager directamente desde el Library Manager del IDE de Arduino.  
-Solo buscá “AyresWiFiManager” y tocá “Instalar”.
+## Instalación
 
----
+### Arduino IDE
 
-**AWM - Gestor Wi‑Fi “pro” para ESP32/ESP8266** con portal cautivo real (AP+DNS), UI moderna servida desde **LittleFS**, almacenamiento seguro de credenciales, **políticas de fallback**, botón de provisión, LED de estado, **NTP**, chequeo de Internet y **logging** configurable.
+Instalá `AyresWiFiManager` desde el Library Manager y verificá que ArduinoJson 6 esté disponible. El portal incluye páginas embebidas, por lo que cargar LittleFS es opcional salvo que quieras personalizar la interfaz.
 
-> Proyecto: https://github.com/AyresNet/AyresWiFiManager  
-> Licencia: MIT — (c) 2025 AyresNet
-
----
-
-## ⭐ ¿Por qué AyresWiFiManager?
-
-- **Portal cautivo real**: DNS *catch‑all* + rutas de detección (Android/iOS/Windows) para forzar apertura en `http://192.168.4.1`.
-- **UI ligera (sin dependencias externas)** servida desde `/data` (LittleFS): búsqueda, reescaneo, barras de señal y opción de borrar credenciales desde el portal.
-- **API clara** y multiplataforma (ESP32/ESP8266) con políticas explícitas.
-- **Fallbacks inteligentes**: `NO_CREDENTIALS_ONLY` (default), `ON_FAIL`, `SMART_RETRIES`, `BUTTON_ONLY`, `NEVER`.
-- **Botón y LED** integrados:
-  - Botón (LOW): **2–5 s** abre portal · **≥5 s** borra JSON y reinicia.
-  - LED: `ON` conectado · `BLINK_SLOW` portal · `BLINK_FAST` escaneo · `OFF` idle (+ patrones dobles/triples para feedback).
-- **Borrado seguro** de `.json` con **lista blanca** y recursivo en ESP32.
-- **Logging profesional** (macros `AWM_LOG*`) con nivel ajustable por `build_flags`.
-- **Utilidades**: NTP (pool.ntp.org/time.nist.gov), `hayInternet()` (Google `204`), RSSI, timestamp, reconexión automática.
-
----
-
-## 🚀 Características
-
-- **Almacenamiento de credenciales** en `/wifi.json` (LittleFS).
-- **Rutas del portal**
-  - `GET /` → `index.html`
-  - `POST /save` → guarda `{ssid,password}` y reinicia
-  - `GET /scan` o `/scan.json` → `[{ssid,rssi,secure}]`
-  - `POST /erase` → borra `.json` (respeta protegidos) y reinicia
-- **HTML/JS/CSS** de ejemplo incluidos: `data/index.html`, `data/success.html`, `data/error.html`
-- **ESP32**: `esp_wifi_set_ps(WIFI_PS_NONE)`, `LittleFS.begin(true)` (auto‑formateo)  
-  **ESP8266**: `WiFi.setSleepMode(WIFI_NONE_SLEEP)`, iteración LittleFS no recursiva
-
----
-
-## 📦 Instalación
-
-### PlatformIO (recomendado)
-
-`platformio.ini` mínimo:
+### PlatformIO
 
 ```ini
 [env:esp32dev]
 platform = espressif32
 board = esp32dev
 framework = arduino
-monitor_speed = 115200
 board_build.filesystem = littlefs
 
-; Opcional: logging
-build_flags =
-  -D AWM_ENABLE_LOG=1     ; 0=off, 1=on
-  -D AWM_LOG_LEVEL=3      ; 1=E, 2=W, 3=I, 4=D, 5=V
+lib_deps =
+  ayresnet/AyresWiFiManager@^2.3.0
 ```
 
-- Coloca tus archivos del portal en `data/` (por ejemplo `index.html`).
-- Sube el FS: `pio run -t uploadfs`.
-- Flashea el sketch y abre el monitor serie.
-
-### Arduino IDE
-
-- Añadí las cores ESP32/ESP8266 oficiales.
-- Instalá el **uploader de LittleFS** correspondiente (ESP32/ESP8266).
-- Subí la carpeta `data/` al FS con la herramienta “Data Upload”.
-- Compilá y cargá el sketch.
-
----
-
-## ✏️ Uso mínimo
+## Uso básico
 
 ```cpp
 #include <AyresWiFiManager.h>
@@ -130,204 +60,167 @@ AyresWiFiManager wifi;
 void setup() {
   Serial.begin(115200);
 
-  wifi.setAPCredentials("ayreswifimanager","123456789");
-  wifi.setPortalTimeout(300);   // 5 min por inactividad
-  wifi.setAPClientCheck(true);  // no cierra si hay clientes
-  wifi.setWebClientCheck(true); // cada request reinicia el timer
-  // wifi.setCaptivePortal(false); // desactiva redirecciones, si querés
+  wifi.setHostname("mi-dispositivo");
+  wifi.setAPCredentials("MiEquipo-Setup", "cambiar-clave");
+  wifi.setPortalTimeout(300);
+  wifi.setAPClientCheck(true);
+  wifi.setWebClientCheck(true);
+  wifi.setFallbackPolicy(
+      AyresWiFiManager::FallbackPolicy::SMART_RETRIES);
+  wifi.setSmartRetries(3, 60000);
 
-  wifi.begin();  // monta FS, carga /wifi.json si existe
-  wifi.run();    // intenta STA; si falla aplica la política de fallback
+  wifi.begin();
+  wifi.run();
 }
 
 void loop() {
-  wifi.update(); // sirve HTTP/DNS y maneja timeouts/LED
+  wifi.update();
+  wifi.reintentarConexionSiNecesario();
 }
 ```
 
----
+Usá una clave vacía para un AP abierto o una clave de ocho caracteres como mínimo para proteger la red de provisión.
 
-## 🪄 Flujo de arranque recomendado
+## Estado y diagnóstico
 
-El ejemplo **`examples/30sVentana/src/main.cpp`** hace:
-
-- Si **hay** credenciales → abre portal con *timeout por inactividad* de **30 s**; si no lo usás, se cierra solo y continúa.
-- Si **no hay** credenciales → abre portal “normal” (ej. **5 min** por inactividad).
-- En ambos casos, si usás el portal (clientes AP o requests HTTP), **no se cierra** hasta que dejes de usarlo.
-
----
-
-## 🧩 API principal
+La aplicación puede consultar un único estado en vez de combinar varias funciones:
 
 ```cpp
-// Portal / AP
-void setHtmlPathPrefix(const String& prefix);  // ej: "/wifimanager"
-void setHostname(const String& host);
-void setAPCredentials(const String& ssid, const String& pass);
-void setCaptivePortal(bool enabled);           // DNS + rutas captive
-void setPortalTimeout(uint32_t seconds);       // 0 = sin timeout
-void setAPClientCheck(bool enabled);           // no cerrar si hay clientes
-void setWebClientCheck(bool enabled);          // cada request reinicia timer
-void openPortal();
-void closePortal();
-bool isPortalActive() const;
+AyresWiFiManager::State estado = wifi.getState();
 
-// Fallback
-enum class FallbackPolicy { ON_FAIL, NO_CREDENTIALS_ONLY, SMART_RETRIES, BUTTON_ONLY, NEVER };
-void setFallbackPolicy(FallbackPolicy p);
-void setSmartRetries(uint8_t maxRetries, uint32_t windowMs);
-void enableButtonPortal(bool enable);
-void setAutoReconnect(bool enabled);
-
-// Estado / utilidades
-bool tieneCredenciales() const;
-bool connectToWiFi();
-bool isConnected();
-int  getSignalStrength();     // RSSI
-uint64_t getTimestamp();      // ms (0 si no hay NTP)
-bool hayInternet();           // generate_204
-bool scanRedDetectada();
-void forzarReconexion();
-
-// LED
-enum class LedPattern { OFF, ON, BLINK_SLOW, BLINK_FAST, BLINK_DOUBLE, BLINK_TRIPLE };
-void setLedAuto(bool enable);
-void setLedPatternManual(LedPattern p);
-
-// Seguridad FS (.json protegidos)
-void setProtectedJsons(std::initializer_list<const char*> names); // ej: {"/wifi.json","licencia.json"}
+Serial.println(AyresWiFiManager::stateToString(estado));
+Serial.println(AyresWiFiManager::errorToString(wifi.getLastError()));
+Serial.println(wifi.getReconnectCount());
+Serial.println(wifi.getLastInternetCheck());
 ```
 
----
+Estados disponibles:
 
-## 🔘 Botón y 💡 LED
+- `OFFLINE`
+- `WIFI_CONNECTING`
+- `WIFI_CONNECTED`
+- `INTERNET_OK`
+- `NO_INTERNET`
+- `PORTAL_ACTIVE`
 
-- **Botón** (pin por defecto **0**, `INPUT_PULLUP`, activo en LOW):
-  - **2–5 s** → abre portal (si `enableButtonPortal(true)`)
-  - **≥5 s** → borra `.json` (respeta `setProtectedJsons`) y reinicia
-- **LED** (pin por defecto **2**):
-  - `ON` conectado a Wi‑Fi
-  - `BLINK_SLOW` portal activo
-  - `BLINK_FAST` escaneando
-  - `BLINK_DOUBLE / TRIPLE` feedback al mantener botón
-  - `OFF` sin enlace/portal
+`PORTAL_ACTIVE` tiene prioridad mientras el portal esté abierto, incluso en modo AP+STA. `INTERNET_OK` y `NO_INTERNET` se actualizan cuando se llama a `hayInternet()`. `getLastInternetCheck()` devuelve milisegundos desde el arranque.
 
-> Podés fijar el patrón manual (`setLedPatternManual`) o dejarlo automático (`setLedAuto(true)`).
+## Ciclo de vida
 
----
+- `begin()` inicializa GPIO, Wi-Fi y LittleFS, y carga las credenciales.
+- `run()` procesa el botón durante el arranque, intenta conectar y aplica la política elegida.
+- `update()` atiende HTTP y DNS, actualiza el LED y controla el timeout del portal. Debe ejecutarse en cada vuelta del loop.
+- `reintentarConexionSiNecesario()` avanza la máquina de reconexión no bloqueante.
 
-## 📋 Logging (opcional, recomendado)
+## Portal cautivo
 
-Incluye `include/AWM_Logging.h` con macros:
+| Método | Ruta | Función |
+| --- | --- | --- |
+| `GET` | `/` | Interfaz del portal |
+| `GET` | `/scan` o `/scan.json` | Redes Wi-Fi cercanas |
+| `GET` | `/info` | Información de librería, AP y host |
+| `POST` | `/save` | Guarda credenciales y reinicia |
+| `POST` | `/erase` | Elimina solo `/wifi.json` o ejecuta un borrado JSON confirmado |
+
+Las páginas personalizadas se guardan como `data/index.html`, `data/success.html` y `data/error.html`. `setHtmlPathPrefix()` permite ubicarlas en una subcarpeta.
+
+La sección de recuperación ofrece dos operaciones diferentes. `scope=wifi` elimina únicamente `/wifi.json`. `scope=all` recorre LittleFS; respeta los archivos protegidos salvo que se envíe explícitamente `force=1`. El restablecimiento total del portal utiliza `force=1`, informa cuántos archivos encontró, eliminó o no pudo eliminar, y reinicia solamente si termina sin errores.
+
+AWM cierra todos los handles que le pertenecen y reintenta cada eliminación tres veces. No puede cerrar de manera segura un archivo abierto por otra librería o componente del proyecto; en ese caso lo informa como fallido en lugar de declarar falsamente que el borrado fue completo.
+
+## Políticas de fallback
+
+- `NO_CREDENTIALS_ONLY`: valor predeterminado; abre el portal solo si no hay credenciales.
+- `ON_FAIL`: lo abre cuando falla la conexión inicial.
+- `SMART_RETRIES`: lo abre después de la cantidad configurada de fallos.
+- `BUTTON_ONLY`: requiere una acción física o de la aplicación.
+- `NEVER`: desactiva el fallback automático.
+
+## Botón y LED
+
+Los pines predeterminados son GPIO 0 para el botón activo en LOW y GPIO 2 para el LED.
+
+- Mantener 2–5 segundos abre el portal.
+- Mantener 5 segundos o más borra las credenciales y reinicia.
+- Parpadeo lento: desconectado de Wi-Fi.
+- Parpadeo rápido: conectando o escaneando.
+- Encendido fijo: conectado a Wi-Fi.
+- Doble parpadeo: conectado al Wi-Fi pero sin acceso a Internet verificado.
+- Triple parpadeo: portal cautivo activo.
 
 ```cpp
-AWM_LOGE("error: %d", code);   // Error
-AWM_LOGW("warning...");
-AWM_LOGI("info...");
-AWM_LOGD("debug x=%d", x);
-AWM_LOGV("verbose...");
+AyresWiFiManager wifi(PIN_LED, PIN_BOTON);
 ```
 
-Activación por **flags de compilación** (PlatformIO):
+## Credenciales y cifrado
+
+Las credenciales se guardan en `/wifi.json`. El modo de almacenamiento se elige antes de `begin()` con un solo booleano; cuando el cifrado está activo, la clave debe tener exactamente 16 bytes:
+
+```cpp
+wifi.setCredentialEncryption(true, miClavePrivada);
+wifi.begin();
+```
+
+Usá `false` en lugar de `true` para guardar en texto plano. Al cambiar el valor, un archivo existente se migra automáticamente en cualquier dirección siempre que se proporcione la misma clave. El método devuelve `false` y deja el cifrado desactivado si la clave no es válida.
+
+No publiques una clave real en el repositorio. Con el cifrado desactivado, el archivo contiene solamente `{"ssid":"...","password":"..."}`. Con el cifrado activado, el registro completo se guarda como un único sobre autenticado AES-128-GCM representado por una cadena JSON opaca, por ejemplo `"QVdNA..."`; no expone nombres de campos ni metadatos del algoritmo. Los objetos cifrados anteriores y los registros CBC heredados se leen y migran automáticamente a este sobre. Esto no protege un dispositivo si se pueden extraer tanto el firmware como la clave; para amenazas mayores se necesita almacenamiento respaldado por hardware.
+
+## Logging
+
+AWM utiliza `AyresLog.h` y conserva las macros `AWM_LOGE`, `AWM_LOGW`, `AWM_LOGI`, `AWM_LOGD` y `AWM_LOGV`.
 
 ```ini
 build_flags =
   -D AWM_ENABLE_LOG=1
-  -D AWM_LOG_LEVEL=3    ; 1=ERROR, 2=WARN, 3=INFO, 4=DEBUG, 5=VERBOSE
+  -D AWM_LOG_LEVEL=3
+  -D AWM_LOG_TAG=\"AWM\"
 ```
 
-- Poné `AWM_ENABLE_LOG=0` para apagar **todos** los logs (macro‑noops).
-- Subí/bajá `AWM_LOG_LEVEL` según lo que quieras ver.
+Con `AWM_ENABLE_LOG=0` el logging se elimina al compilar. Los niveles van de 1 (`ERROR`) a 5 (`VERBOSE`).
 
----
+## Estructura del repositorio
 
-## 🗂 Archivos del portal (LittleFS)
-
-- `data/index.html` – escaneo, filtro, selección de SSID, formulario de guardado, opciones avanzadas  
-- `data/success.html` – confirmación de guardado (SVG con pulso; el equipo se reinicia)  
-- `data/error.html` – error de guardado (SVG con vibración sutil + enlace “Volver”)
-
-> Cambiá la raíz con `setHtmlPathPrefix("/wifimanager")` si preferís otra carpeta.
-
-**Subida del FS**  
-- PlatformIO: `pio run -t uploadfs`  
-- Arduino IDE: herramienta “Data Upload”
-
----
-
-## 🔁 Migrando desde tzapu/WiFiManager
-
-AyresWiFiManager busca ser **simple y explícito**:
-
-- Sin *auto‑magia* de configuración: vos decidís **cuándo** abrir portal y **por cuánto**.
-- Portal verdaderamente **cautivo** (DNS + rutas), no solo un AP + webserver.
-- UI moderna sin CDNs, pensada para ESPs con poca RAM/flash.
-- **Borrado seguro** de `.json` con whitelist y (en ESP32) **recursivo**.
-- **Logging** integrable y niveles ajustables.
-
----
-
-## 📚 Ejemplos
-
-- `examples/standard/src/main.cpp` – flujo simple estándar  
-- `examples/30sVentana/src/main.cpp` – “ventana” de arranque de 30 s si hay credenciales
-
----
-
-## 🗃 Estructura del repo
-
-```
-data/                  # HTML/CSS/JS del portal (LittleFS)
-examples/
-  standard/src/main.cpp
-  30sVentana/src/main.cpp
-include/
-  AWM_Logging.h
-src/
-  ayreswifimanager.h
-  ayreswifimanager.cpp
-platformio.ini
-library.properties
-library.json
-README.md
+```text
+data/          Páginas personalizadas del portal
+examples/      Ejemplos para Arduino y PlatformIO
+src/           Headers públicos e implementación
+.github/       Integración continua
 ```
 
-> Si querés mantener librerías locales fuera del repo, añadí rutas a `.gitignore` (ej.: `lib/AyresShell/`).
+El `src/main.cpp` local es un firmware de desarrollo ignorado por Git y no se distribuye con la librería.
 
----
+## AyresNet GZIP Asset Compiler
 
-## ✅ Consejos de producción
+El repositorio incluye `ayres_gzip.py`, una herramienta sin dependencias desarrollada por AyresNet. No tiene archivos de entrada ni carpetas de salida predefinidos. Al ejecutarla sin argumentos abre un asistente interactivo:
 
-- **Protegé** archivos críticos:  
-  `wifi.setProtectedJsons({"/wifi.json","licencia.json"});`
-- Definí **timeouts por inactividad** coherentes (`setPortalTimeout`) y activá `setAPClientCheck(true)` + `setWebClientCheck(true)` si no querés que se cierre mientras lo usan.
-- Para instalaciones remotas, `setFallbackPolicy(SMART_RETRIES)` + `setAutoReconnect(true)` suelen dar buena experiencia.
-- Si necesitás ahorrar logs en producción: `-D AWM_ENABLE_LOG=0`.
+```bash
+python ayres_gzip.py
+```
 
----
+El asistente permite agregar uno o varios archivos, carpetas o patrones y pregunta dónde crear el header `.h` o `.hpp`. Las mismas operaciones pueden automatizarse desde la terminal:
 
-## 🧩 Compatibilidad
+```bash
+# Un archivo
+python ayres_gzip.py web/index.html -o include/web_gz.h
 
-- **ESP32** (Arduino core)  
-- **ESP8266** (Arduino core)
+# Varios archivos
+python ayres_gzip.py web/index.html web/app.css web/app.js -o include/web_gz.h
 
-> Requiere **LittleFS**. En ESP32 se auto‑formatea si `begin(true)` falla.
+# Una carpeta completa, incluyendo subcarpetas
+python ayres_gzip.py web -r -o include/web_gz.h
 
----
+# Solo algunos tipos y salida C++ portable
+python ayres_gzip.py assets -r -I "*.html" -I "*.css" -o include/assets_gz.hpp -f cpp -p MI_APP
+```
 
-## 🤝 Contribuir
+Para regenerar de forma explícita el portal embebido de esta librería:
 
-¡PRs e issues son bienvenidos!  
-Ideas: ejemplos adicionales, traducciones, mejoras UI/UX del portal, nuevas políticas de fallback.
+```bash
+python ayres_gzip.py data/index.html data/success.html data/error.html -o src/AWM_html_gz.h
+```
 
----
+La opción `--check`, usando los mismos argumentos, permite fallar en CI cuando el header está desactualizado. Los GZIP generados no incluyen fecha ni nombre del archivo de origen, por lo que producen diffs estables en Git. `python ayres_gzip.py -h` y `python ayres_gzip.py --help` muestran todas las opciones.
 
-## 📄 Licencia
+## Licencia
 
-MIT — ver archivo `LICENSE` (o cabeceras SPDX en el código).
-
----
-
-> 📘 [Leer en ingles → README.md](README.md)
-
-¿Dudas o ideas? Abrí un issue en el repo. ¡Gracias por probar **AyresWiFiManager**! 🚀
+MIT © AyresNet. Consultá [LICENSE](LICENSE).

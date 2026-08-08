@@ -2,7 +2,7 @@
  *  AyresWiFiManager — Firmware Library
  *  =========================================================================
  *  Archivo   : AyresWiFiManager.cpp
- *  Versión   : 2.2.1
+ *  Versión   : 2.3.0
  *  Autor     : Daniel C. Salgado
  *  Empresa   : AyresNet IoT Systems
  *  Repositorio: https://github.com/ayresnet/AyresWiFiManager
@@ -12,7 +12,7 @@
  *
  *  DESCRIPCIÓN
  *  =========================================================================
- *  Gestor profesional de conectividad WiFi y provisión para ESP32/ESP8266.
+ *  Gestor de conectividad Wi-Fi y provisión para ESP32.
  *  Características principales:
  *
  *  - Portal Cautivo completo (SoftAP + DNS catch-all)
@@ -24,10 +24,15 @@
  *  - Control por hardware: LED de estado + botón físico
  *  - Políticas de fallback configurables
  *  - Verificación de conectividad real a Internet
- *  - Soporte completo para ESP32 y ESP8266
+ *  - Estado unificado y diagnóstico de conectividad
  *
  *  CHANGELOG (Semantic Versioning)
  *  =========================================================================
+ *  v2.3.0 (2026-08-07)
+ *    + Estado unificado de conectividad y diagnóstico público
+ *    + Logging y documentación preparados para uso como librería
+ *    + Soporte oficial concentrado en ESP32
+ *
  *  v2.2.1 (2025-12-15)
  *    + [FIX] Compatibilidad ESP8266: AUTH_OPEN vs WIFI_AUTH_OPEN en
  * handleScan() Issue reportado en GitHub - ahora compila correctamente en ambas
@@ -55,15 +60,14 @@
  *
  *  PLATAFORMAS SOPORTADAS
  *  =========================================================================
- *  ESP32:   FreeRTOS timing, esp_timer, auto-format LittleFS, WiFi PS_NONE
- *  ESP8266: millis()/delay() timing, timeout clásico, LittleFS manual mount
+ *  ESP32: FreeRTOS timing, esp_timer, auto-format LittleFS, WiFi PS_NONE
  *
  *  DEPENDENCIAS
  *  =========================================================================
  *  - ArduinoJson >= 6.21.2
  *  - LittleFS (incluido en framework)
  *  - DNSServer (incluido en framework)
- *  - WebServer/ESP8266WebServer (incluido en framework)
+ *  - WebServer (incluido en framework ESP32)
  *
  *  DOCUMENTACIÓN COMPLETA
  *  =========================================================================
@@ -93,6 +97,7 @@
 #include "esp_system.h" // for esp_random()
 #include "mbedtls/aes.h"
 #include "mbedtls/base64.h"
+#include "mbedtls/gcm.h"
 
 #elif defined(ESP8266)
 #include "bearssl/bearssl.h" // ESP8266 uses BearSSL
@@ -276,26 +281,173 @@ void AyresWiFiManager::setBusyCallback(std::function<void()> cb) {
   _busyCallback = cb;
 }
 
-/* ================================= CREDENTIAL ENCRYPTION (AES-128)
+/* ============================= CREDENTIAL ENCRYPTION (AES-128-GCM)
  * ================================ */
-void AyresWiFiManager::enableCredentialEncryption(const char *aes_key) {
-  if (!aes_key || strlen(aes_key) != 16) {
-    AYLOG_E("❌ AES key must be exactly 16 bytes");
-    return;
+bool AyresWiFiManager::setCredentialEncryption(bool enabled,
+                                               const char *aes_key) {
+  if (!enabled) {
+    _encryptionEnabled = false;
+    if (aes_key) {
+      if (strlen(aes_key) != sizeof(_aesKey)) {
+        _aesKeyConfigured = false;
+        memset(_aesKey, 0, sizeof(_aesKey));
+        _lastError = Error::ENCRYPTION_ERROR;
+        AYLOG_E("La clave de migración debe tener exactamente 16 bytes");
+        return false;
+      }
+      memcpy(_aesKey, aes_key, sizeof(_aesKey));
+      _aesKeyConfigured = true;
+    } else {
+      _aesKeyConfigured = false;
+      memset(_aesKey, 0, sizeof(_aesKey));
+    }
+    _lastError = Error::NONE;
+    AYLOG_I("Almacenamiento de credenciales en texto plano");
+    return true;
   }
-  memcpy(_aesKey, aes_key, 16);
+
+  if (!aes_key || strlen(aes_key) != sizeof(_aesKey)) {
+    _encryptionEnabled = false;
+    _aesKeyConfigured = false;
+    memset(_aesKey, 0, sizeof(_aesKey));
+    _lastError = Error::ENCRYPTION_ERROR;
+    AYLOG_E("La clave de cifrado debe tener exactamente 16 bytes");
+    return false;
+  }
+
+  memcpy(_aesKey, aes_key, sizeof(_aesKey));
   _encryptionEnabled = true;
-  AYLOG_I("🔒 Credential encryption enabled");
+  _aesKeyConfigured = true;
+  _lastError = Error::NONE;
+  AYLOG_I("Almacenamiento cifrado de credenciales habilitado");
+  return true;
+}
+
+void AyresWiFiManager::enableCredentialEncryption(const char *aes_key) {
+  setCredentialEncryption(true, aes_key);
 }
 
 void AyresWiFiManager::disableCredentialEncryption() {
-  _encryptionEnabled = false;
-  memset(_aesKey, 0, 16); // Clear key from memory
-  AYLOG_I("🔓 Credential encryption disabled");
+  setCredentialEncryption(false);
 }
 
 bool AyresWiFiManager::isEncryptionEnabled() const {
   return _encryptionEnabled;
+}
+
+String AyresWiFiManager::encryptCredentialEnvelope(const String &networkName,
+                                                    const String &networkPass) {
+  static const uint8_t magic[] = {'A', 'W', 'M', 3};
+  static const uint8_t aad[] = "AWM-CREDENTIAL-V3";
+  constexpr size_t MAGIC_LEN = sizeof(magic);
+  constexpr size_t NONCE_LEN = 12;
+  constexpr size_t TAG_LEN = 16;
+
+  StaticJsonDocument<320> credentials;
+  credentials["s"] = networkName;
+  credentials["p"] = networkPass;
+  if (credentials.overflowed())
+    return "";
+  String plaintext;
+  if (serializeJson(credentials, plaintext) == 0)
+    return "";
+
+  const size_t plainLen = plaintext.length();
+  const size_t packetLen = MAGIC_LEN + NONCE_LEN + plainLen + TAG_LEN;
+  uint8_t *packet = static_cast<uint8_t *>(malloc(packetLen));
+  if (!packet)
+    return "";
+
+  memcpy(packet, magic, MAGIC_LEN);
+  uint8_t *nonce = packet + MAGIC_LEN;
+  uint8_t *encrypted = nonce + NONCE_LEN;
+  uint8_t *tag = encrypted + plainLen;
+  for (size_t i = 0; i < NONCE_LEN; ++i)
+    nonce[i] = static_cast<uint8_t>(esp_random());
+
+  mbedtls_gcm_context gcm;
+  mbedtls_gcm_init(&gcm);
+  int rc = mbedtls_gcm_setkey(&gcm, MBEDTLS_CIPHER_ID_AES, _aesKey, 128);
+  if (rc == 0) {
+    rc = mbedtls_gcm_crypt_and_tag(
+        &gcm, MBEDTLS_GCM_ENCRYPT, plainLen, nonce, NONCE_LEN, aad,
+        sizeof(aad) - 1, reinterpret_cast<const uint8_t *>(plaintext.c_str()),
+        encrypted, TAG_LEN, tag);
+  }
+  mbedtls_gcm_free(&gcm);
+
+  String envelope;
+  if (rc == 0)
+    envelope = base64Encode(packet, packetLen);
+  memset(packet, 0, packetLen);
+  free(packet);
+  return envelope;
+}
+
+bool AyresWiFiManager::decryptCredentialEnvelope(const String &envelope,
+                                                 String &networkName,
+                                                 String &networkPass) {
+  static const uint8_t magic[] = {'A', 'W', 'M', 3};
+  static const uint8_t aad[] = "AWM-CREDENTIAL-V3";
+  constexpr size_t MAGIC_LEN = sizeof(magic);
+  constexpr size_t NONCE_LEN = 12;
+  constexpr size_t TAG_LEN = 16;
+  constexpr size_t OVERHEAD = MAGIC_LEN + NONCE_LEN + TAG_LEN;
+
+  size_t packetLen = (envelope.length() * 3 / 4) + 4;
+  uint8_t *packet = static_cast<uint8_t *>(malloc(packetLen));
+  if (!packet)
+    return false;
+  if (!base64Decode(envelope, packet, &packetLen) || packetLen <= OVERHEAD ||
+      memcmp(packet, magic, MAGIC_LEN) != 0) {
+    memset(packet, 0, packetLen);
+    free(packet);
+    return false;
+  }
+
+  const size_t encryptedLen = packetLen - OVERHEAD;
+  const uint8_t *nonce = packet + MAGIC_LEN;
+  const uint8_t *encrypted = nonce + NONCE_LEN;
+  const uint8_t *tag = encrypted + encryptedLen;
+  uint8_t *decrypted = static_cast<uint8_t *>(malloc(encryptedLen + 1));
+  if (!decrypted) {
+    memset(packet, 0, packetLen);
+    free(packet);
+    return false;
+  }
+
+  mbedtls_gcm_context gcm;
+  mbedtls_gcm_init(&gcm);
+  int rc = mbedtls_gcm_setkey(&gcm, MBEDTLS_CIPHER_ID_AES, _aesKey, 128);
+  if (rc == 0) {
+    rc = mbedtls_gcm_auth_decrypt(
+        &gcm, encryptedLen, nonce, NONCE_LEN, aad, sizeof(aad) - 1, tag,
+        TAG_LEN, encrypted, decrypted);
+  }
+  mbedtls_gcm_free(&gcm);
+  memset(packet, 0, packetLen);
+  free(packet);
+
+  if (rc != 0) {
+    memset(decrypted, 0, encryptedLen + 1);
+    free(decrypted);
+    return false;
+  }
+  decrypted[encryptedLen] = '\0';
+
+  StaticJsonDocument<320> credentials;
+  DeserializationError jsonError = deserializeJson(
+      credentials, reinterpret_cast<char *>(decrypted), encryptedLen);
+  const char *decodedName = credentials["s"];
+  const char *decodedPass = credentials["p"];
+  const bool valid = !jsonError && decodedName && decodedName[0] && decodedPass;
+  if (valid) {
+    networkName = decodedName;
+    networkPass = decodedPass;
+  }
+  memset(decrypted, 0, encryptedLen + 1);
+  free(decrypted);
+  return valid;
 }
 
 String AyresWiFiManager::base64Encode(const uint8_t *data, size_t len) {
@@ -385,77 +537,73 @@ bool AyresWiFiManager::base64Decode(const String &b64, uint8_t *out,
 #endif
 }
 
-String AyresWiFiManager::encryptString(const String &plaintext) {
-  if (plaintext.isEmpty())
-    return "";
-
-  // Generate random IV
-  uint8_t iv[16];
-#if defined(ESP32)
-  for (int i = 0; i < 16; i++)
-    iv[i] = esp_random() & 0xFF;
-#elif defined(ESP8266)
-  for (int i = 0; i < 16; i++)
-    iv[i] = os_random() & 0xFF;
-#endif
-
-  // PKCS7 padding
-  size_t plainLen = plaintext.length();
-  size_t paddedLen = ((plainLen / 16) + 1) * 16;
-  uint8_t padValue = paddedLen - plainLen;
-
-  uint8_t *padded = (uint8_t *)malloc(paddedLen);
-  if (!padded)
-    return "";
-
-  memcpy(padded, plaintext.c_str(), plainLen);
-  for (size_t i = plainLen; i < paddedLen; i++) {
-    padded[i] = padValue;
-  }
-
-  // Encrypt
-  uint8_t *encrypted = (uint8_t *)malloc(paddedLen);
-  if (!encrypted) {
-    free(padded);
-    return "";
-  }
-
-#if defined(ESP32)
-  mbedtls_aes_context aes;
-  mbedtls_aes_init(&aes);
-  mbedtls_aes_setkey_enc(&aes, _aesKey, 128);
-
-  uint8_t iv_copy[16];
-  memcpy(iv_copy, iv, 16);
-  mbedtls_aes_crypt_cbc(&aes, MBEDTLS_AES_ENCRYPT, paddedLen, iv_copy, padded,
-                        encrypted);
-  mbedtls_aes_free(&aes);
-#elif defined(ESP8266)
-  // ESP8266 BearSSL AES
-  br_aes_ct_cbc_keys bc;
-  br_aes_ct_cbc_init(&bc, _aesKey, 16);
-
-  uint8_t iv_copy[16];
-  memcpy(iv_copy, iv, 16);
-  br_aes_ct_cbc_encrypt(&bc, iv_copy, encrypted, padded, paddedLen);
-#endif
-
-  free(padded);
-
-  // Format: IV (base64) + ":" + encrypted (base64)
-  String result = base64Encode(iv, 16);
-  result += ":";
-  result += base64Encode(encrypted, paddedLen);
-
-  free(encrypted);
-  return result;
-}
-
 String AyresWiFiManager::decryptString(const String &ciphertext) {
   if (ciphertext.isEmpty())
     return "";
 
-  // Split IV and encrypted data
+  if (ciphertext.startsWith("gcm:")) {
+    static const uint8_t aad[] = "AWM-CREDENTIAL-V2";
+    constexpr size_t NONCE_LEN = 12;
+    constexpr size_t TAG_LEN = 16;
+
+    const int nonceEnd = ciphertext.indexOf(':', 4);
+    const int dataEnd = ciphertext.indexOf(':', nonceEnd + 1);
+    if (nonceEnd < 0 || dataEnd < 0)
+      return "";
+
+    const String nonceB64 = ciphertext.substring(4, nonceEnd);
+    const String dataB64 = ciphertext.substring(nonceEnd + 1, dataEnd);
+    const String tagB64 = ciphertext.substring(dataEnd + 1);
+
+    uint8_t nonce[NONCE_LEN];
+    size_t nonceLen = sizeof(nonce);
+    uint8_t tag[TAG_LEN];
+    size_t tagLen = sizeof(tag);
+    if (!base64Decode(nonceB64, nonce, &nonceLen) || nonceLen != NONCE_LEN ||
+        !base64Decode(tagB64, tag, &tagLen) || tagLen != TAG_LEN)
+      return "";
+
+    size_t encryptedLen = (dataB64.length() * 3 / 4) + 4;
+    uint8_t *encrypted = static_cast<uint8_t *>(malloc(encryptedLen));
+    if (!encrypted)
+      return "";
+    if (!base64Decode(dataB64, encrypted, &encryptedLen) ||
+        encryptedLen == 0) {
+      free(encrypted);
+      return "";
+    }
+
+    uint8_t *decrypted = static_cast<uint8_t *>(malloc(encryptedLen));
+    if (!decrypted) {
+      free(encrypted);
+      return "";
+    }
+
+    mbedtls_gcm_context gcm;
+    mbedtls_gcm_init(&gcm);
+    int rc = mbedtls_gcm_setkey(&gcm, MBEDTLS_CIPHER_ID_AES, _aesKey, 128);
+    if (rc == 0) {
+      rc = mbedtls_gcm_auth_decrypt(
+          &gcm, encryptedLen, nonce, NONCE_LEN, aad, sizeof(aad) - 1, tag,
+          TAG_LEN, encrypted, decrypted);
+    }
+    mbedtls_gcm_free(&gcm);
+    memset(encrypted, 0, encryptedLen);
+    free(encrypted);
+
+    if (rc != 0) {
+      memset(decrypted, 0, encryptedLen);
+      free(decrypted);
+      return "";
+    }
+
+    String result(reinterpret_cast<char *>(decrypted), encryptedLen);
+    memset(decrypted, 0, encryptedLen);
+    free(decrypted);
+    return result;
+  }
+
+  // Compatibilidad de lectura con AES-128-CBC de AWM <= 2.2.1.
   int sepIdx = ciphertext.indexOf(':');
   if (sepIdx < 0)
     return "";
@@ -479,6 +627,10 @@ String AyresWiFiManager::decryptString(const String &ciphertext) {
     free(encrypted);
     return "";
   }
+  if (encLen == 0 || (encLen % 16) != 0) {
+    free(encrypted);
+    return "";
+  }
 
   // Decrypt
   uint8_t *decrypted = (uint8_t *)malloc(encLen);
@@ -490,12 +642,14 @@ String AyresWiFiManager::decryptString(const String &ciphertext) {
 #if defined(ESP32)
   mbedtls_aes_context aes;
   mbedtls_aes_init(&aes);
-  mbedtls_aes_setkey_dec(&aes, _aesKey, 128);
+  int aesRc = mbedtls_aes_setkey_dec(&aes, _aesKey, 128);
 
   uint8_t iv_copy[16];
   memcpy(iv_copy, iv, 16);
-  mbedtls_aes_crypt_cbc(&aes, MBEDTLS_AES_DECRYPT, encLen, iv_copy, encrypted,
-                        decrypted);
+  if (aesRc == 0) {
+    aesRc = mbedtls_aes_crypt_cbc(&aes, MBEDTLS_AES_DECRYPT, encLen, iv_copy,
+                                  encrypted, decrypted);
+  }
   mbedtls_aes_free(&aes);
 #elif defined(ESP8266)
   br_aes_ct_cbc_keys bc;
@@ -506,15 +660,36 @@ String AyresWiFiManager::decryptString(const String &ciphertext) {
   br_aes_ct_cbc_decrypt(&bc, iv_copy, decrypted, encrypted, encLen);
 #endif
 
+  memset(encrypted, 0, encLen);
   free(encrypted);
 
-  // Remove PKCS7 padding
-  uint8_t padValue = decrypted[encLen - 1];
-  if (padValue > 0 && padValue <= 16) {
-    encLen -= padValue;
+#if defined(ESP32)
+  if (aesRc != 0) {
+    memset(decrypted, 0, encLen);
+    free(decrypted);
+    return "";
   }
+#endif
+
+  // Validar y remover PKCS#7 del formato anterior.
+  uint8_t padValue = decrypted[encLen - 1];
+  if (padValue == 0 || padValue > 16 || padValue > encLen) {
+    memset(decrypted, 0, encLen);
+    free(decrypted);
+    return "";
+  }
+  for (size_t i = encLen - padValue; i < encLen; ++i) {
+    if (decrypted[i] != padValue) {
+      memset(decrypted, 0, encLen);
+      free(decrypted);
+      return "";
+    }
+  }
+  const size_t paddedLen = encLen;
+  encLen -= padValue;
 
   String result = String((char *)decrypted, encLen);
+  memset(decrypted, 0, paddedLen);
   free(decrypted);
   return result;
 }
@@ -546,6 +721,7 @@ void AyresWiFiManager::begin() {
 #else
   if (!LittleFS.begin()) {
 #endif
+    _lastError = Error::STORAGE_ERROR;
     AYLOG_E("❌ Error montando LittleFS");
     return;
   }
@@ -555,7 +731,7 @@ void AyresWiFiManager::begin() {
 
 void AyresWiFiManager::run() {
   // Ventana para detectar hold con feedback LED
-  AYLOG_I("🔔 Botón: >1s abre portal | ≥6s borra credenciales");
+  AYLOG_I("Botón: 2-5 s abre portal | 5 s o más borra credenciales");
 
   uint32_t startTime = AWM_now_ms();
   bool pressed = false;
@@ -576,13 +752,13 @@ void AyresWiFiManager::run() {
     uint32_t t0 = AWM_now_ms();
     while (digitalRead(buttonPin) == LOW) {
       uint32_t held = AWM_now_ms() - t0;
-      if (held >= 6000) { // Subir umbral de borrado a 6s
+      if (held >= 5000) {
         setLedPatternManual(LedPattern::BLINK_TRIPLE);
-        AWM_LOGW("🩹 Hold ≥6s → borrar credenciales y reiniciar");
+        AWM_LOGW("Pulsación de 5 s o más: borrar credenciales y reiniciar");
         eraseCredentials();
         AWM_sleep_ms(900);
         ESP.restart();
-      } else if (held >= 1000) { // Bajar umbral de portal a 1s
+      } else if (held >= 2000) {
         setLedPatternManual(LedPattern::BLINK_DOUBLE);
       } else {
         setLedPatternManual(LedPattern::BLINK_FAST);
@@ -591,9 +767,8 @@ void AyresWiFiManager::run() {
       AWM_sleep_ms(10);
     }
     uint32_t held = AWM_now_ms() - t0;
-    // Permitir rango amplio: 1s a 6s
-    if (held >= 1000 && held < 6000 && allowButtonPortal) {
-      AYLOG_I("🟢 Hold 1–6s → abrir portal");
+    if (held >= 2000 && held < 5000 && allowButtonPortal) {
+      AYLOG_I("Pulsación de 2-5 s: abrir portal");
       setLedAuto(true);
       startPortal();
       return;
@@ -649,6 +824,14 @@ void AyresWiFiManager::update() {
 
   ledAutoUpdate();
   ledTask();
+
+  const bool wifiConnected = (WiFi.status() == WL_CONNECTED);
+  connected = wifiConnected;
+  if (!wifiConnected && _state != State::WIFI_CONNECTING)
+    _state = State::OFFLINE;
+  else if (wifiConnected &&
+           (_state == State::OFFLINE || _state == State::WIFI_CONNECTING))
+    _state = State::WIFI_CONNECTED;
 
 #if defined(ESP32)
   // Manejo de timeout del portal mediante esp_timer
@@ -827,6 +1010,9 @@ void AyresWiFiManager::stopPortal() {
 
   portalActive = false;
 
+  _state = (WiFi.status() == WL_CONNECTED) ? State::WIFI_CONNECTED
+                                            : State::OFFLINE;
+
   if (externalApActive) {
     WiFi.mode(WIFI_AP);
   } else {
@@ -921,22 +1107,15 @@ void AyresWiFiManager::handleSave() {
 
   String inSsid = server.arg("ssid");
   String inPass = server.arg("password");
-  if (inSsid.isEmpty() || inPass.isEmpty()) {
-    mostrarPaginaError("Faltan datos para guardar.");
+  if (inSsid.isEmpty()) {
+    mostrarPaginaError("El nombre de la red Wi-Fi es obligatorio.");
     return;
   }
 
-  StaticJsonDocument<192> doc;
-  doc["ssid"] = inSsid;
-  doc["password"] = inPass;
-
-  File file = LittleFS.open("/wifi.json", "w");
-  if (!file) {
+  if (!saveCredentials(inSsid, inPass)) {
     mostrarPaginaError("Error al guardar credenciales.");
     return;
   }
-  serializeJson(doc, file);
-  file.close();
 
   File success = LittleFS.open(htmlPathPrefix + "success.html", "r");
   if (success) {
@@ -968,13 +1147,53 @@ void AyresWiFiManager::handleErase() {
     return;
   }
 
-  server.send(200, "application/json", "{\"ok\":true}");
-  AWM_sleep_ms(150);
+  const String scope = server.arg("scope");
+  const String confirmation = server.arg("confirm");
+  EraseResult result;
 
-  eraseCredentials();
+  if (scope == "wifi") {
+    if (confirmation != "WIFI_ONLY") {
+      server.send(400, "application/json",
+                  "{\"ok\":false,\"error\":\"confirmation_required\"}");
+      return;
+    }
 
-  AWM_sleep_ms(300);
-  ESP.restart();
+    result.found = LittleFS.exists("/wifi.json") ? 1 : 0;
+    const bool ok = eraseWiFiCredentials();
+    result.removed = (result.found && ok) ? 1 : 0;
+    result.failed = ok ? 0 : 1;
+  } else if (scope == "all") {
+    if (confirmation != "DELETE_ALL_JSON") {
+      server.send(400, "application/json",
+                  "{\"ok\":false,\"error\":\"confirmation_required\"}");
+      return;
+    }
+
+    const bool forceAll = server.arg("force") == "1";
+    // Con force=1 incluye wifi.json y no aplica la lista de protegidos. Los
+    // handles propios se cierran antes de comenzar la fase de borrado.
+    eraseJsonInDir("/", !forceAll, result);
+  } else {
+    server.send(400, "application/json",
+                "{\"ok\":false,\"error\":\"invalid_scope\"}");
+    return;
+  }
+
+  StaticJsonDocument<192> response;
+  response["ok"] = (result.failed == 0);
+  response["scope"] = scope;
+  response["found"] = result.found;
+  response["removed"] = result.removed;
+  response["failed"] = result.failed;
+  response["restarting"] = (result.failed == 0);
+  String json;
+  serializeJson(response, json);
+  server.send(result.failed == 0 ? 200 : 500, "application/json", json);
+
+  if (result.failed == 0) {
+    AWM_sleep_ms(800);
+    ESP.restart();
+  }
 }
 
 void AyresWiFiManager::handleScan() {
@@ -1056,9 +1275,13 @@ void AyresWiFiManager::handleScan() {
     obj["ssid"] = WiFi.SSID(i);
     obj["rssi"] = WiFi.RSSI(i);
 #if defined(ESP32)
-    obj["encryption"] = (WiFi.encryptionType(i) == WIFI_AUTH_OPEN) ? 0 : 1;
+    const bool secure = WiFi.encryptionType(i) != WIFI_AUTH_OPEN;
+    obj["encryption"] = secure ? 1 : 0;
+    obj["secure"] = secure;
 #else
-    obj["encryption"] = (WiFi.encryptionType(i) == ENC_TYPE_NONE) ? 0 : 1;
+    const bool secure = WiFi.encryptionType(i) != ENC_TYPE_NONE;
+    obj["encryption"] = secure ? 1 : 0;
+    obj["secure"] = secure;
 #endif
   }
 
@@ -1105,8 +1328,7 @@ void AyresWiFiManager::mostrarPaginaError(const String &mensajeFallback) {
 /* ================================= CREDENCIALES
  * ================================ */
 bool AyresWiFiManager::tieneCredenciales() const {
-  return LittleFS.exists("/wifi.json") && !ssid.isEmpty() &&
-         !password.isEmpty();
+  return LittleFS.exists("/wifi.json") && !ssid.isEmpty();
 }
 
 void AyresWiFiManager::loadCredentials() {
@@ -1116,101 +1338,149 @@ void AyresWiFiManager::loadCredentials() {
   }
   File file = LittleFS.open("/wifi.json", "r");
   if (!file) {
+    _lastError = Error::STORAGE_ERROR;
     AYLOG_E("❌ No se pudo abrir /wifi.json");
     return;
   }
-  StaticJsonDocument<512> doc; // Increased for encrypted format
+  StaticJsonDocument<512> doc;
   DeserializationError error = deserializeJson(doc, file);
   file.close();
   if (error) {
+    _lastError = Error::STORAGE_ERROR;
     AWM_LOGE("❌ Error al deserializar JSON de /wifi.json");
     return;
   }
 
-  // Check if encryption is used in the file
-  bool fileIsEncrypted = doc["encrypted"].as<bool>();
-
+  bool needsEncryptionMigration = false;
   String loadedSsid, loadedPassword;
 
-  if (fileIsEncrypted) {
-    // Encrypted format
-    if (!_encryptionEnabled) {
-      AYLOG_E("❌ File is encrypted but encryption is not enabled. Call "
+  if (doc.is<const char *>()) {
+    // Formato actual: una única cadena opaca con el sobre autenticado.
+    if (!_aesKeyConfigured) {
+      _lastError = Error::ENCRYPTION_ERROR;
+      AYLOG_E("❌ Encrypted credentials require "
               "enableCredentialEncryption() first.");
       return;
     }
-
-    String encSsid = doc["ssid"].as<String>();
-    String encPass = doc["password"].as<String>();
-
-    loadedSsid = decryptString(encSsid);
-    loadedPassword = decryptString(encPass);
-
-    if (loadedSsid.isEmpty() || loadedPassword.isEmpty()) {
-      AYLOG_E("❌ Decryption failed. Wrong AES key?");
+    if (!decryptCredentialEnvelope(doc.as<String>(), loadedSsid,
+                                   loadedPassword)) {
+      _lastError = Error::ENCRYPTION_ERROR;
+      AYLOG_E("❌ No se pudo autenticar el archivo de credenciales");
       return;
     }
-    AYLOG_I("🔓 Credentials loaded (encrypted)");
+    needsEncryptionMigration = !_encryptionEnabled;
+    AYLOG_I("Credenciales cifradas cargadas");
+  } else if (doc["encrypted"].as<bool>()) {
+    // Compatibilidad de lectura con los objetos cifrados anteriores.
+    if (!_aesKeyConfigured) {
+      _lastError = Error::ENCRYPTION_ERROR;
+      AYLOG_E("❌ Encrypted credentials require "
+              "enableCredentialEncryption() first.");
+      return;
+    }
+    loadedSsid = decryptString(doc["ssid"].as<String>());
+    loadedPassword = decryptString(doc["password"].as<String>());
+    if (loadedSsid.isEmpty()) {
+      _lastError = Error::ENCRYPTION_ERROR;
+      AYLOG_E("❌ No se pudieron migrar las credenciales cifradas");
+      return;
+    }
+    needsEncryptionMigration = true;
+    AYLOG_I("Formato cifrado anterior detectado; se migrará");
   } else {
-    // Plain text format (backward compatible)
+    // Formato plano: solamente los dos campos necesarios.
     loadedSsid = doc["ssid"].as<String>();
     loadedPassword = doc["password"].as<String>();
-    AYLOG_I("✅ Credentials loaded (plaintext)");
-
-    // AUTO-MIGRATION: If encryption is enabled but file is plaintext, re-save
-    // encrypted
-    if (_encryptionEnabled) {
-      AYLOG_I("🔒 Migrating plaintext credentials to encrypted format...");
-      saveCredentials(loadedSsid, loadedPassword);
-    }
+    AYLOG_I("Credenciales en texto plano cargadas");
+    needsEncryptionMigration = _encryptionEnabled;
   }
 
-  if (loadedSsid.isEmpty() || loadedPassword.isEmpty()) {
-    AYLOG_W("⚠️ Credenciales vacías en archivo.");
+  if (loadedSsid.isEmpty()) {
+    _lastError = Error::STORAGE_ERROR;
+    AYLOG_W("SSID vacío en el archivo de credenciales");
     return;
   }
   ssid = loadedSsid;
   password = loadedPassword;
-  AYLOG_I("✅ SSID=\"%s\" loaded.", ssid.c_str());
+  if (needsEncryptionMigration) {
+    AYLOG_I("Migrando credenciales al sobre cifrado actual");
+    if (!saveCredentials(ssid, password))
+      return;
+  }
+  _lastError = Error::NONE;
+  AYLOG_I("✅ Credenciales Wi-Fi cargadas");
 }
 
-void AyresWiFiManager::saveCredentials(String s, String p) {
-  StaticJsonDocument<512> doc; // Increased for encrypted format
+bool AyresWiFiManager::saveCredentials(String s, String p) {
+  StaticJsonDocument<512> doc;
 
   if (_encryptionEnabled) {
-    // Encrypted format
-    doc["encrypted"] = true;
-    doc["ssid"] = encryptString(s);
-    doc["password"] = encryptString(p);
-    AYLOG_I("🔒 Saving credentials (encrypted)");
+    // El archivo no expone estructura, nombres de campos ni algoritmo.
+    String envelope = encryptCredentialEnvelope(s, p);
+    if (envelope.isEmpty()) {
+      _lastError = Error::ENCRYPTION_ERROR;
+      AYLOG_E("No se pudieron cifrar las credenciales");
+      return false;
+    }
+    doc.set(envelope);
+    AYLOG_I("Guardando credenciales cifradas");
   } else {
-    // Plain text format
-    doc["encrypted"] = false;
+    // El formato plano es deliberadamente simple y legible.
     doc["ssid"] = s;
     doc["password"] = p;
-    AYLOG_I("🔓 Saving credentials (plaintext)");
+    AYLOG_I("Guardando credenciales en texto plano");
   }
 
   File file = LittleFS.open("/wifi.json", "w");
   if (!file) {
+    _lastError = Error::STORAGE_ERROR;
     AYLOG_E("❌ Error abriendo /wifi.json para escritura");
-    return;
+    return false;
   }
-  serializeJson(doc, file);
+  if (serializeJson(doc, file) == 0) {
+    file.close();
+    _lastError = Error::STORAGE_ERROR;
+    AYLOG_E("Error escribiendo /wifi.json");
+    return false;
+  }
   file.close();
+  _lastError = Error::NONE;
+  return true;
 }
 
 void AyresWiFiManager::eraseCredentials() {
-  eraseJsonInDir("/");
-  AYLOG_I("🧹 Limpieza de .json finalizada (respetando protegidos).");
+  if (eraseWiFiCredentials())
+    AYLOG_I("Credenciales Wi-Fi eliminadas");
+  else
+    AYLOG_W("No se pudo eliminar /wifi.json");
+}
+
+bool AyresWiFiManager::eraseWiFiCredentials() {
+  if (!LittleFS.exists("/wifi.json"))
+    return true;
+
+  for (uint8_t attempt = 0; attempt < 3; ++attempt) {
+    if (LittleFS.remove("/wifi.json")) {
+      ssid = "";
+      password = "";
+      return true;
+    }
+    AWM_sleep_ms(50);
+  }
+  return false;
 }
 
 /* ================================= CONEXIÓN STA
  * ================================ */
 bool AyresWiFiManager::connectToWiFi() {
-  if (!tieneCredenciales())
+  if (!tieneCredenciales()) {
+    _state = State::OFFLINE;
+    _lastError = Error::NO_CREDENTIALS;
     return false;
+  }
 
+  _state = State::WIFI_CONNECTING;
+  _lastError = Error::NONE;
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid.c_str(), password.c_str());
 
@@ -1225,6 +1495,8 @@ bool AyresWiFiManager::connectToWiFi() {
       WiFi.setSleep(false);
 #endif
       connected = true;
+      _state = State::WIFI_CONNECTED;
+      _lastError = Error::NONE;
       return true;
     }
     AWM_sleep_ms(250);
@@ -1236,12 +1508,74 @@ bool AyresWiFiManager::connectToWiFi() {
 
   AYLOG_W("⏱️ Tiempo agotado. No se pudo conectar.");
   connected = false;
+  _state = State::OFFLINE;
+  _lastError = Error::CONNECTION_TIMEOUT;
   return false;
 }
 
 bool AyresWiFiManager::isConnected() {
   connected = (WiFi.status() == WL_CONNECTED);
+  if (connected) {
+    if (_state == State::OFFLINE || _state == State::WIFI_CONNECTING)
+      _state = State::WIFI_CONNECTED;
+  } else if (_state != State::WIFI_CONNECTING) {
+    _state = State::OFFLINE;
+  }
   return connected;
+}
+
+AyresWiFiManager::State AyresWiFiManager::getState() const {
+  if (portalActive)
+    return State::PORTAL_ACTIVE;
+  return _state;
+}
+
+const char *AyresWiFiManager::stateToString(State state) {
+  switch (state) {
+  case State::OFFLINE:
+    return "OFFLINE";
+  case State::WIFI_CONNECTING:
+    return "WIFI_CONNECTING";
+  case State::WIFI_CONNECTED:
+    return "WIFI_CONNECTED";
+  case State::INTERNET_OK:
+    return "INTERNET_OK";
+  case State::NO_INTERNET:
+    return "NO_INTERNET";
+  case State::PORTAL_ACTIVE:
+    return "PORTAL_ACTIVE";
+  }
+  return "UNKNOWN";
+}
+
+AyresWiFiManager::Error AyresWiFiManager::getLastError() const {
+  return _lastError;
+}
+
+const char *AyresWiFiManager::errorToString(Error error) {
+  switch (error) {
+  case Error::NONE:
+    return "NONE";
+  case Error::NO_CREDENTIALS:
+    return "NO_CREDENTIALS";
+  case Error::CONNECTION_TIMEOUT:
+    return "CONNECTION_TIMEOUT";
+  case Error::INTERNET_UNREACHABLE:
+    return "INTERNET_UNREACHABLE";
+  case Error::STORAGE_ERROR:
+    return "STORAGE_ERROR";
+  case Error::ENCRYPTION_ERROR:
+    return "ENCRYPTION_ERROR";
+  }
+  return "UNKNOWN";
+}
+
+uint32_t AyresWiFiManager::getReconnectCount() const {
+  return _reconnectCount;
+}
+
+uint32_t AyresWiFiManager::getLastInternetCheck() const {
+  return _lastInternetCheck;
 }
 
 int AyresWiFiManager::getSignalStrength() { return WiFi.RSSI(); }
@@ -1259,6 +1593,8 @@ void AyresWiFiManager::reintentarConexionSiNecesario() {
   if (WiFi.status() == WL_CONNECTED) {
     if (!connected) {
       connected = true;
+      _state = State::WIFI_CONNECTED;
+      _lastError = Error::NONE;
       AYLOG_I("🔌 Conexión recuperada.");
       sincronizarHoraNTP();
     }
@@ -1305,6 +1641,8 @@ void AyresWiFiManager::reintentarConexionSiNecesario() {
 
       // Iniciamos conexión SIN bloquear
       WiFi.begin(ssid.c_str(), password.c_str());
+      _state = State::WIFI_CONNECTING;
+      _reconnectCount++;
 
       // FIX: Yield extra para dar aire al stack WiFi
       AWM_sleep_ms(10);
@@ -1323,6 +1661,8 @@ void AyresWiFiManager::reintentarConexionSiNecesario() {
       AYLOG_I("🔌 Reconectado a WiFi.");
       sincronizarHoraNTP();
       connected = true;
+      _state = State::WIFI_CONNECTED;
+      _lastError = Error::NONE;
       failCount = 0;
       failWindowStart = 0;
       reState = RE_IDLE;
@@ -1332,6 +1672,8 @@ void AyresWiFiManager::reintentarConexionSiNecesario() {
     // 2. Verificar Timeout
     if (ahora - reStart > reconnectAttemptMs) {
       AYLOG_W("❌ Reconexión WiFi fallida (Timeout).");
+      _state = State::OFFLINE;
+      _lastError = Error::CONNECTION_TIMEOUT;
       ultimoIntentoWiFi = ahora; // Iniciar backoff
       reState = RE_IDLE;
 
@@ -1394,6 +1736,8 @@ void AyresWiFiManager::forzarReconexion() {
   }
 
   WiFi.begin(ssid.c_str(), password.c_str());
+  _state = State::WIFI_CONNECTING;
+  _reconnectCount++;
   ultimoIntentoWiFi = AWM_now_ms();
 }
 
@@ -1476,8 +1820,12 @@ uint64_t AyresWiFiManager::getTimestamp() {
 /* =============================== INTERNET CHECK
  * =============================== */
 bool AyresWiFiManager::hayInternet() {
-  if (WiFi.status() != WL_CONNECTED)
+  _lastInternetCheck = AWM_now_ms();
+  if (WiFi.status() != WL_CONNECTED) {
+    _state = State::OFFLINE;
+    _lastError = Error::INTERNET_UNREACHABLE;
     return false;
+  }
   WiFiClient client;
   HTTPClient http;
   http.begin(client, "http://clients3.google.com/generate_204");
@@ -1488,7 +1836,10 @@ bool AyresWiFiManager::hayInternet() {
 #endif
   int httpCode = http.GET();
   http.end();
-  return (httpCode == 204);
+  const bool online = (httpCode == 204);
+  _state = online ? State::INTERNET_OK : State::NO_INTERNET;
+  _lastError = online ? Error::NONE : Error::INTERNET_UNREACHABLE;
+  return online;
 }
 
 /* =================================== LED FSM
@@ -1511,22 +1862,34 @@ void AyresWiFiManager::ledAutoUpdate() {
   if (!ledAuto)
     return;
 
-  LedPattern want = LedPattern::OFF;
+  LedPattern want;
 
-  // prioridad: escaneo > portal > conectado > idle
-#if defined(ESP32)
-  if (scanning)
+  // El escaneo tiene prioridad porque ocupa temporalmente la radio.
+  if (scanning) {
     want = LedPattern::BLINK_FAST;
-#else
-  if (scanning || (AWM_now_ms() < scanningUntil))
-    want = LedPattern::BLINK_FAST;
-#endif
-  else if (portalActive)
-    want = LedPattern::BLINK_SLOW;
-  else if (WiFi.status() == WL_CONNECTED)
-    want = LedPattern::ON;
-  else
-    want = LedPattern::OFF;
+  } else {
+    switch (getState()) {
+    case State::OFFLINE:
+      want = LedPattern::BLINK_SLOW;
+      break;
+    case State::WIFI_CONNECTING:
+      want = LedPattern::BLINK_FAST;
+      break;
+    case State::WIFI_CONNECTED:
+    case State::INTERNET_OK:
+      want = LedPattern::ON;
+      break;
+    case State::NO_INTERNET:
+      want = LedPattern::BLINK_DOUBLE;
+      break;
+    case State::PORTAL_ACTIVE:
+      want = LedPattern::BLINK_TRIPLE;
+      break;
+    default:
+      want = LedPattern::OFF;
+      break;
+    }
+  }
 
   if (want != ledPat)
     ledSet(want);
@@ -1616,65 +1979,85 @@ bool AyresWiFiManager::isProtectedJson(const String &name) const {
   return false;
 }
 
-#if defined(ESP32)
-// Recursivo + cierra el File ANTES de borrar (evita "Has open FD")
-void AyresWiFiManager::eraseJsonInDir(const char *dirPath) {
+void AyresWiFiManager::eraseJsonInDir(const char *dirPath,
+                                      bool respectProtected,
+                                      EraseResult &result) {
   if (!dirPath || !*dirPath)
     return;
 
-  File dir = LittleFS.open(dirPath);
-  if (!dir || !dir.isDirectory())
-    return;
+  // Primero se recopilan las rutas. Así no queda ningún File abierto por AWM
+  // durante la fase de borrado.
+  std::vector<String> pendingDirs;
+  std::vector<String> jsonFiles;
+  pendingDirs.push_back(String(dirPath));
 
-  String base = dirPath;
-  if (!base.endsWith("/"))
-    base += "/";
+  while (!pendingDirs.empty()) {
+    const String currentDir = pendingDirs.back();
+    pendingDirs.pop_back();
 
-  for (File f = dir.openNextFile(); f; f = dir.openNextFile()) {
-    String name = f.name();
-    String full = name;
-    if (!full.startsWith("/"))
-      full = base + full;
+    File dir = LittleFS.open(currentDir);
+    if (!dir || !dir.isDirectory()) {
+      if (dir)
+        dir.close();
+      continue;
+    }
 
-    const bool isDir = f.isDirectory();
-    f.close();
+    String base = currentDir;
+    if (!base.endsWith("/"))
+      base += "/";
 
-    if (isDir) {
-      eraseJsonInDir(full.c_str());
-    } else {
-      if (full.endsWith(".json") && !isProtectedJson(full)) {
-        if (LittleFS.remove(full)) {
-          AWM_LOGI("🗑️  Borrado: %s", full.c_str());
-        } else {
-          AWM_LOGW("⚠️  No se pudo borrar: %s", full.c_str());
+    for (File file = dir.openNextFile(); file; file = dir.openNextFile()) {
+      String full = file.name();
+      if (!full.startsWith("/"))
+        full = base + full;
+      const bool directory = file.isDirectory();
+      file.close();
+
+      if (directory) {
+        pendingDirs.push_back(full);
+      } else {
+        String lower = full;
+        lower.toLowerCase();
+        if (lower.endsWith(".json") &&
+            (!respectProtected || !isProtectedJson(full))) {
+          jsonFiles.push_back(full);
         }
       }
     }
+    dir.close();
   }
-  dir.close();
-}
-#else // ESP8266 (no recursivo)
-void AyresWiFiManager::eraseJsonInDir(const char *dirPath) {
-  if (!dirPath || !*dirPath)
-    return;
 
-  Dir d = LittleFS.openDir(dirPath);
-  while (d.next()) {
-    String name = d.fileName();
-    String full = name;
-    if (!full.startsWith("/"))
-      full = String("/") + full;
-
-    if (full.endsWith(".json") && !isProtectedJson(full)) {
-      if (LittleFS.remove(full)) {
-        AYLOG_I("🗑️  Borrado: %s", full.c_str());
-      } else {
-        AYLOG_W("⚠️  No se pudo borrar: %s", full.c_str());
-      }
+  result.found += jsonFiles.size();
+  for (const String &path : jsonFiles) {
+    bool removed = false;
+    for (uint8_t attempt = 0; attempt < 3 && !removed; ++attempt) {
+      removed = LittleFS.remove(path);
+      if (!removed)
+        AWM_sleep_ms(50);
     }
+
+    if (removed) {
+      result.removed++;
+      AWM_LOGI("Borrado JSON: %s", path.c_str());
+    } else {
+      result.failed++;
+      AWM_LOGW("No se pudo borrar JSON: %s", path.c_str());
+    }
+
+#if defined(ESP32)
+    esp_task_wdt_reset();
+#endif
+    if (_busyCallback)
+      _busyCallback();
+  }
+
+  if (result.failed > 0) {
+    AYLOG_W("Borrado JSON incompleto: %u eliminados, %u fallidos",
+            result.removed, result.failed);
+  } else {
+    AYLOG_I("Borrado JSON completo: %u archivo(s)", result.removed);
   }
 }
-#endif
 
 /* ====================== Portal timeout por esp_timer (ESP32)
  * ====================== */

@@ -6,7 +6,7 @@
  *  OVERVIEW
  *  ---------------------------------------------------------------------------
  *  AyresWiFiManager is a production-grade Wi-Fi provisioning library for
- *  ESP32/ESP8266. It provides a captive portal (SoftAP + DNS catch-all),
+ *  ESP32. It provides a captive portal (SoftAP + DNS catch-all),
  *  credential storage in LittleFS, resilient fallback policies, hardware UX
  *  (status LED + button), auto-reconnect, Internet reachability checks and
  *  robust time sync (NTP with rotation and timeouts; HTTP Date fallback on
@@ -19,7 +19,7 @@
  *      JSON endpoints for scanning and device info.
  *  - Simple and safe provisioning:
  *      POST /save stores SSID/password in /wifi.json and reboots.
- *      POST /erase wipes JSONs while respecting a whitelist.
+ *      POST /erase can remove only wifi.json or all JSON files.
  *  - Resilient connectivity:
  *      Fallback policies: NO_CREDENTIALS_ONLY (default), ON_FAIL,
  *      SMART_RETRIES, BUTTON_ONLY, NEVER.
@@ -37,7 +37,7 @@
  *  ---------------------------------------------------------------------------
  *    GET  /                -> index.html
  *    POST /save            -> store credentials and reboot
- *    POST /erase           -> wipe JSON files (whitelist respected)
+ *    POST /erase           -> scope=wifi or scope=all; restarts on success
  *    GET  /scan or /scan.json
  *                           -> Wi-Fi list: [{ "ssid","rssi","secure" }]
  *    GET  /info            -> { name, version, version_code, ap, host, ap_ip }
@@ -110,8 +110,8 @@
  *
  *  📌 SEGURIDAD Y LIMPIEZA
  *  ------------------------
- *  setProtectedJsons({names})  → Define archivos .json que NO se borrarán con
- * /erase (ej: {"config.json"}).
+ *  setProtectedJsons({names})  → Protege archivos cuando /erase usa scope=all
+ * sin force=1. El borrado total confirmado del portal usa force=1.
  *
  *  QUICK START
  *  ---------------------------------------------------------------------------
@@ -134,16 +134,17 @@
  *  ESP32: FreeRTOS timing (xTaskGetTickCount/vTaskDelay), esp_timer via
  *         AyresTimer for captive-portal timeout, Wi-Fi power save disabled.
  *         LittleFS.begin(true) auto-formats on mount failure.
- *  ESP8266: millis()/delay() timing, classic timeout math, LittleFS.begin().
  *
  *  PERFORMANCE AND OPERATIONS
  *  ---------------------------------------------------------------------------
  *  - Do not scan too frequently (SCAN_INTERVAL_MS).
  *  - Cache small JSON responses where appropriate.
- *  - Define a JSON whitelist for critical files before calling /erase.
+ *  - Prefer scope=wifi. Use scope=all with force=1 only for a factory reset.
  *
  *  CHANGELOG (Semantic Versioning)
  *  ---------------------------------------------------------------------------
+ *  2.3.0  (2026-08-07) ESP32-only release; unified connectivity state and
+ *                      diagnostics; logger and documentation cleanup.
  *  2.2.1  (2025-12-15) ESP8266 compatibility fix: AUTH_OPEN vs WIFI_AUTH_OPEN.
  *                      Improved documentation headers with full changelog.
  *  2.2.0  (2025) NTP with rotation/timeouts; ESP32 HTTP Date fallback; TZ
@@ -161,10 +162,10 @@
 #define AYRES_WIFI_MANAGER_H
 
 // ===== Versioning (public) =====
-#define AWM_VERSION "2.2.1"
+#define AWM_VERSION "2.3.0"
 #define AWM_VERSION_MAJOR 2
-#define AWM_VERSION_MINOR 2
-#define AWM_VERSION_PATCH 1
+#define AWM_VERSION_MINOR 3
+#define AWM_VERSION_PATCH 0
 
 #include <Arduino.h>
 
@@ -172,13 +173,8 @@
 #include <WebServer.h>
 #include <WiFi.h>
 #include <esp_timer.h>
-
-#elif defined(ESP8266)
-#include <ESP8266WebServer.h>
-#include <ESP8266WiFi.h>
-#define WebServer ESP8266WebServer
 #else
-#error "Plataforma no soportada (ESP32 o ESP8266)"
+#error "AyresWiFiManager 2.3.0 supports ESP32 only"
 #endif
 
 #include <DNSServer.h>
@@ -214,6 +210,26 @@ public:
     BLINK_FAST,
     BLINK_DOUBLE,
     BLINK_TRIPLE
+  };
+
+  // Estado unificado para diagnóstico de conectividad.
+  // PORTAL_ACTIVE tiene prioridad mientras el portal está abierto.
+  enum class State : uint8_t {
+    OFFLINE,
+    WIFI_CONNECTING,
+    WIFI_CONNECTED,
+    INTERNET_OK,
+    NO_INTERNET,
+    PORTAL_ACTIVE
+  };
+
+  enum class Error : uint8_t {
+    NONE,
+    NO_CREDENTIALS,
+    CONNECTION_TIMEOUT,
+    INTERNET_UNREACHABLE,
+    STORAGE_ERROR,
+    ENCRYPTION_ERROR
   };
 
   // ---------- ctor ----------
@@ -252,6 +268,14 @@ public:
   bool tieneCredenciales() const;
   String getWiFiPass() const;
 
+  // ---------- diagnóstico ----------
+  State getState() const;
+  static const char *stateToString(State state);
+  Error getLastError() const;
+  static const char *errorToString(Error error);
+  uint32_t getReconnectCount() const;
+  uint32_t getLastInternetCheck() const;
+
   // ---------- utilidades extra ----------
   bool scanRedDetectada();
   void forzarReconexion();
@@ -272,7 +296,8 @@ public:
   // ==== Busy Callback (para mantener la UI viva durante bloqueos) ====
   void setBusyCallback(std::function<void()> cb);
 
-  // ==== Credential Encryption (AES-128) ====
+  // ==== Credential Encryption (AES-128-GCM) ====
+  bool setCredentialEncryption(bool enabled, const char *aes_key = nullptr);
   void enableCredentialEncryption(const char *aes_key); // 16 bytes for AES-128
   void disableCredentialEncryption();
   bool isEncryptionEnabled() const;
@@ -308,10 +333,17 @@ private:
 
   // ---------- credenciales ----------
   void loadCredentials();
-  void saveCredentials(String ssid, String password);
+  bool saveCredentials(String ssid, String password);
   void eraseCredentials();
+  bool eraseWiFiCredentials();
+  struct EraseResult {
+    uint16_t found = 0;
+    uint16_t removed = 0;
+    uint16_t failed = 0;
+  };
   bool isProtectedJson(const String &name) const;
-  void eraseJsonInDir(const char *path);
+  void eraseJsonInDir(const char *path, bool respectProtected,
+                      EraseResult &result);
 
   // ---------- NTP ----------
   void sincronizarHoraNTP();
@@ -360,6 +392,10 @@ private:
   bool connected = false;
   bool autoReconnect = true;
   unsigned long ultimoIntentoWiFi = 0;
+  State _state = State::OFFLINE;
+  Error _lastError = Error::NONE;
+  uint32_t _reconnectCount = 0;
+  uint32_t _lastInternetCheck = 0;
 
   // scan helper
   unsigned long ultimoScan = 0;
@@ -392,8 +428,12 @@ private:
 
   // Credential encryption
   bool _encryptionEnabled = false;
+  bool _aesKeyConfigured = false;
   uint8_t _aesKey[16]; // AES-128 key
-  String encryptString(const String &plaintext);
+  String encryptCredentialEnvelope(const String &ssid, const String &password);
+  bool decryptCredentialEnvelope(const String &envelope, String &ssid,
+                                 String &password);
+  // Lectura exclusiva de formatos cifrados anteriores a AWM 2.3.0.
   String decryptString(const String &ciphertext);
   String base64Encode(const uint8_t *data, size_t len);
   bool base64Decode(const String &b64, uint8_t *out, size_t *outLen);

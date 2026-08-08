@@ -4,7 +4,7 @@
  * 
  * Description:
  * ------------
- * Advanced usage example of AyresWiFiManager v2.0.1 for ESP32/ESP8266.
+ * Advanced usage example of AyresWiFiManager v2.3.0 for ESP32.
  * 
  * Key Features:
  *  - Automatic connection using stored credentials (STA mode).
@@ -18,7 +18,7 @@
  * 
  * Requirements:
  * -------------
- * 1. Install AyresWiFiManager v2.0.1 (or higher).
+ * 1. Install AyresWiFiManager v2.3.0 (or higher).
  * 2. Prepare HTML files in LittleFS (upload with "ESP32 LittleFS Data Upload"
  *    or "pio run --target uploadfs" in PlatformIO). Place them in /data:
  *       - index.html   → main portal page
@@ -38,7 +38,6 @@
  * Compatibility:
  * --------------
  *  - ESP32 (Arduino core)
- *  - ESP8266 (Arduino core)
  *
  * Author:
  * -------
@@ -51,15 +50,12 @@
 
 #include <Arduino.h>
 #include <AyresWiFiManager.h>
-// #include "AWM_Logging.h"   // Si no lo tenés, dejalo comentado y usá Serial.println
 
-#if defined(ESP32)
-  #include <WiFi.h>
-#elif defined(ESP8266)
-  #include <ESP8266WiFi.h>
-#else
-  #error "Este ejemplo requiere ESP32 o ESP8266"
+#if !defined(ESP32)
+  #error "Este ejemplo requiere ESP32"
 #endif
+
+#include <WiFi.h>
 
 /* ===================== Config del usuario ===================== */
 
@@ -147,7 +143,7 @@ void printTimeIfReady() {
 // Abrir portal cautivo usando API pública
 void startPortalNow(const char* reason) {
   Serial.print("Starting captive portal ("); Serial.print(reason); Serial.println(")...");
-  awm.openPortal();        // API pública v2.0.1
+  awm.openPortal();        // API pública
   portalActive = true;
   setLedMode(LED_BLINK_FAST);
 }
@@ -216,7 +212,7 @@ void setup() {
 }
 
 void loop() {
-  awm.update(); // IMPORTANTE en v2.0.1
+  awm.update(); // Debe ejecutarse en cada iteración
   updateLed();
 
 #if (BTN_PIN >= 0)

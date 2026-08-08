@@ -11,10 +11,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
 
     - name: Cache pip
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: ~/.cache/pip
         key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
@@ -22,7 +22,7 @@ jobs:
           ${{ runner.os }}-pip-
 
     - name: Cache PlatformIO
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: ~/.platformio
         key: ${{ runner.os }}-platformio-${{ hashFiles('**/platformio.ini') }}
@@ -30,16 +30,22 @@ jobs:
           ${{ runner.os }}-platformio-
 
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
-        python-version: '3.9'
+        python-version: '3.12'
 
     - name: Install PlatformIO
       run: |
         python -m pip install --upgrade pip
         pip install platformio
 
-    - name: Build ESP32
-      run: pio run -e esp32dev
+    - name: Verify embedded portal assets
+      run: python ayres_gzip.py data/index.html data/success.html data/error.html -o src/AWM_html_gz.h --check
+
+    - name: Build minimal example for ESP32
+      run: pio ci examples/AWM_Minimal/AWM_Minimal.ino --lib=. --board=esp32dev
+
+    - name: Build advanced example for ESP32
+      run: pio ci examples/AWM_Advanced/AWM_Advanced.ino --lib=. --board=esp32dev
 
 
