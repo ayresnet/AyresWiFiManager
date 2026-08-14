@@ -33,12 +33,6 @@
  *    + Logging y documentación preparados para uso como librería
  *    + Soporte oficial concentrado en ESP32
  *
- *  v2.2.1 (2025-12-15)
- *    + [FIX] Compatibilidad ESP8266: AUTH_OPEN vs WIFI_AUTH_OPEN en
- * handleScan() Issue reportado en GitHub - ahora compila correctamente en ambas
- * plataformas
- *    + [DOC] Encabezados mejorados con changelog completo
- *
  *  v2.2.0 (2025)
  *    + [FEATURE] Sincronización NTP con rotación de servidores y timeouts
  *    + [FEATURE] Fallback HTTP Date en ESP32 usando settimeofday()
@@ -81,73 +75,37 @@
 
 // Macros directas de AyresLog son usadas en el código, no hace falta mapeo
 
-#if defined(ESP32)
 #include <HTTPClient.h>
 #include <esp_task_wdt.h> // Watchdog de hardware
 #include <esp_wifi.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <sys/time.h> // settimeofday (fallback HTTP Date)
-#elif defined(ESP8266)
-#include <ESP8266HTTPClient.h>
-#endif
 
 // mbedTLS for AES encryption
-#if defined(ESP32)
 #include "esp_system.h" // for esp_random()
 #include "mbedtls/aes.h"
 #include "mbedtls/base64.h"
 #include "mbedtls/gcm.h"
 
-#elif defined(ESP8266)
-#include "bearssl/bearssl.h" // ESP8266 uses BearSSL
-extern "C" {
-#include "user_interface.h"  // for os_random()
-}
-#endif
-
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
 
-/* ===== Helpers de tiempo (abstraen millis/delay) ===== */
-#if defined(ESP32)
+/* ===== Helpers de tiempo ===== */
 static inline uint32_t AWM_now_ms() {
   return (uint32_t)(xTaskGetTickCount() * portTICK_PERIOD_MS);
 }
 static inline void AWM_sleep_ms(uint32_t ms) { vTaskDelay(pdMS_TO_TICKS(ms)); }
-#else
-static inline uint32_t AWM_now_ms() { return millis(); }
-static inline void AWM_sleep_ms(uint32_t ms) { delay(ms); }
-#endif
 
 /* ============================== Helpers NTP/Fecha
  * =============================== */
 
-// Espera a que el tiempo esté disponible.
-// - ESP32: usa getLocalTime(&tm, timeoutMs)
-// - Otros: sonda time(nullptr) hasta timeout
+// Espera a que el tiempo esté disponible en ESP32.
 static bool AWM_waitLocalTime_(struct tm *ti, uint32_t timeoutMs) {
-#if defined(ESP32)
   return getLocalTime(ti, timeoutMs);
-#else
-  const uint32_t step = 200;
-  uint32_t waited = 0;
-  while (waited < timeoutMs) {
-    time_t now = time(nullptr);
-    if (now > 100000) { // umbral razonable
-      if (ti)
-        localtime_r(&now, ti);
-      return true;
-    }
-    AWM_sleep_ms(step);
-    waited += step;
-  }
-  return false;
-#endif
 }
 
-#if defined(ESP32)
 // Parsea "Sat, 27 Sep 2025 04:35:06 GMT" -> epoch (UTC)
 // Importante: asumimos TZ=UTC0 (ya seteado por sincronizarHoraNTP con
 // configTzTime)
@@ -215,7 +173,6 @@ static bool AWM_syncTimeFromHttp_(const char *url, uint32_t timeoutMs = 6000) {
   AYLOG_I("🕒 Hora desde HTTP: %s", buf);
   return true;
 }
-#endif // ESP32
 
 /* ============================ ctor / setters ============================ */
 
@@ -232,6 +189,15 @@ void AyresWiFiManager::setAPCredentials(const String &ssid_,
                                         const String &pass_) {
   apSSID = ssid_;
   apPASS = pass_;
+}
+
+bool AyresWiFiManager::setAPCredentialsUsingStoredPassword(
+    const String &ssid_) {
+  if (ssid_.isEmpty() || password.length() < 8 || password.length() > 63)
+    return false;
+  apSSID = ssid_;
+  apPASS = password;
+  return true;
 }
 
 void AyresWiFiManager::setCaptivePortal(bool enabled) {
@@ -452,7 +418,6 @@ bool AyresWiFiManager::decryptCredentialEnvelope(const String &envelope,
 
 String AyresWiFiManager::base64Encode(const uint8_t *data, size_t len) {
   size_t olen = 0;
-#if defined(ESP32)
   mbedtls_base64_encode(NULL, 0, &olen, data, len); // Get required size
   uint8_t *buf = (uint8_t *)malloc(olen);
   if (!buf)
@@ -464,77 +429,14 @@ String AyresWiFiManager::base64Encode(const uint8_t *data, size_t len) {
     return result;
   }
   free(buf);
-#elif defined(ESP8266)
-  // ESP8266 doesn't have mbedtls_base64, use manual implementation
-  const char *b64chars =
-      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-  String result;
-  result.reserve((len * 4 / 3) + 4);
-
-  for (size_t i = 0; i < len; i += 3) {
-    uint32_t n = ((uint32_t)data[i]) << 16;
-    if (i + 1 < len)
-      n |= ((uint32_t)data[i + 1]) << 8;
-    if (i + 2 < len)
-      n |= data[i + 2];
-
-    result += b64chars[(n >> 18) & 0x3F];
-    result += b64chars[(n >> 12) & 0x3F];
-    result += (i + 1 < len) ? b64chars[(n >> 6) & 0x3F] : '=';
-    result += (i + 2 < len) ? b64chars[n & 0x3F] : '=';
-  }
-  return result;
-#endif
   return "";
 }
 
 bool AyresWiFiManager::base64Decode(const String &b64, uint8_t *out,
                                     size_t *outLen) {
-#if defined(ESP32)
   return (mbedtls_base64_decode(out, *outLen, outLen,
                                 (const uint8_t *)b64.c_str(),
                                 b64.length()) == 0);
-#elif defined(ESP8266)
-  // Manual Base64 decode for ESP8266
-  const char *input = b64.c_str();
-  size_t len = b64.length();
-  size_t olen = 0;
-
-  for (size_t i = 0; i < len; i++) {
-    char c = input[i];
-    if (c == '=')
-      break;
-
-    uint8_t v;
-    if (c >= 'A' && c <= 'Z')
-      v = c - 'A';
-    else if (c >= 'a' && c <= 'z')
-      v = c - 'a' + 26;
-    else if (c >= '0' && c <= '9')
-      v = c - '0' + 52;
-    else if (c == '+')
-      v = 62;
-    else if (c == '/')
-      v = 63;
-    else
-      continue;
-
-    static uint32_t buf = 0;
-    static int bits = 0;
-
-    buf = (buf << 6) | v;
-    bits += 6;
-
-    if (bits >= 8) {
-      bits -= 8;
-      if (olen < *outLen) {
-        out[olen++] = (buf >> bits) & 0xFF;
-      }
-    }
-  }
-  *outLen = olen;
-  return true;
-#endif
 }
 
 String AyresWiFiManager::decryptString(const String &ciphertext) {
@@ -639,7 +541,6 @@ String AyresWiFiManager::decryptString(const String &ciphertext) {
     return "";
   }
 
-#if defined(ESP32)
   mbedtls_aes_context aes;
   mbedtls_aes_init(&aes);
   int aesRc = mbedtls_aes_setkey_dec(&aes, _aesKey, 128);
@@ -651,25 +552,15 @@ String AyresWiFiManager::decryptString(const String &ciphertext) {
                                   encrypted, decrypted);
   }
   mbedtls_aes_free(&aes);
-#elif defined(ESP8266)
-  br_aes_ct_cbc_keys bc;
-  br_aes_ct_cbc_init(&bc, _aesKey, 16);
-
-  uint8_t iv_copy[16];
-  memcpy(iv_copy, iv, 16);
-  br_aes_ct_cbc_decrypt(&bc, iv_copy, decrypted, encrypted, encLen);
-#endif
 
   memset(encrypted, 0, encLen);
   free(encrypted);
 
-#if defined(ESP32)
   if (aesRc != 0) {
     memset(decrypted, 0, encLen);
     free(decrypted);
     return "";
   }
-#endif
 
   // Validar y remover PKCS#7 del formato anterior.
   uint8_t padValue = decrypted[encLen - 1];
@@ -694,6 +585,21 @@ String AyresWiFiManager::decryptString(const String &ciphertext) {
   return result;
 }
 
+bool AyresWiFiManager::verifyWiFiPassword(const String &candidate) const {
+  if (password.isEmpty())
+    return false;
+
+  size_t difference = candidate.length() ^ password.length();
+  for (size_t i = 0; i < 64; ++i) {
+    const uint8_t expected =
+        i < password.length() ? static_cast<uint8_t>(password[i]) : 0;
+    const uint8_t received =
+        i < candidate.length() ? static_cast<uint8_t>(candidate[i]) : 0;
+    difference |= expected ^ received;
+  }
+  return difference == 0;
+}
+
 String AyresWiFiManager::getWiFiPass() const { return password; }
 
 /* ================================ BEGIN / RUN
@@ -703,24 +609,14 @@ void AyresWiFiManager::begin() {
   digitalWrite(ledPin, LOW);
   pinMode(buttonPin, INPUT_PULLUP);
 
-#if defined(ESP32)
   createTimers(); // Init native timers
 
   WiFi.persistent(false);
   WiFi.setAutoReconnect(true);
   WiFi.setSleep(false);
   esp_wifi_set_ps(WIFI_PS_NONE);
-#else
-  WiFi.persistent(false);
-  WiFi.setAutoReconnect(true);
-  WiFi.setSleepMode(WIFI_NONE_SLEEP);
-#endif
 
-#if defined(ESP32)
   if (!LittleFS.begin(true)) {
-#else
-  if (!LittleFS.begin()) {
-#endif
     _lastError = Error::STORAGE_ERROR;
     AYLOG_E("❌ Error montando LittleFS");
     return;
@@ -815,9 +711,7 @@ void AyresWiFiManager::run() {
 /* =================================== UPDATE
  * =================================== */
 void AyresWiFiManager::update() {
-#if defined(ESP32)
   esp_task_wdt_reset(); // FEED DOG in inner loop
-#endif
   server.handleClient();
   if (dnsRunning)
     dns.processNextRequest();
@@ -833,7 +727,6 @@ void AyresWiFiManager::update() {
            (_state == State::OFFLINE || _state == State::WIFI_CONNECTING))
     _state = State::WIFI_CONNECTED;
 
-#if defined(ESP32)
   // Manejo de timeout del portal mediante esp_timer
   if (portalActive && portalTimeoutMs && _portalTimeoutExpired) {
     _portalTimeoutExpired = false;
@@ -845,13 +738,6 @@ void AyresWiFiManager::update() {
       stopPortal();
     }
   }
-#else
-  // ESP8266: sin FreeRTOS → cálculo clásico por tiempo
-  if (portalActive && portalHasTimedOut()) {
-    AYLOG_W("⏳ Portal tiempo agotado → cerrando");
-    stopPortal();
-  }
-#endif
 }
 
 /* =============================== AP / DNS / HTTP
@@ -875,11 +761,7 @@ void AyresWiFiManager::setupHTTPRoutes() {
   // NUEVO: info para el portal (versión, host, SSID AP)
   server.on("/info", HTTP_GET, [this]() {
     String hostStr;
-#if defined(ESP32)
     hostStr = WiFi.getHostname() ? WiFi.getHostname() : String();
-#elif defined(ESP8266)
-    hostStr = WiFi.hostname();
-#endif
     if (!hostStr.length() && hostname.length())
       hostStr = hostname;
 
@@ -948,10 +830,8 @@ void AyresWiFiManager::setupAP() {
 
   WiFi.softAPConfig(apIP, apGW, apSN);
   WiFi.softAP(apSSID.c_str(), apPASS.c_str());
-#if defined(ESP32)
   if (hostname.length())
     WiFi.softAPsetHostname(hostname.c_str());
-#endif
   AYLOG_I("📡 AP: %s | IP %s", apSSID.c_str(), apIP.toString().c_str());
 }
 
@@ -971,21 +851,17 @@ void AyresWiFiManager::startPortal() {
   portalStart = AWM_now_ms();
   lastHttpAccess = portalStart;
 
-#if defined(ESP32)
   // CRITICAL: Reinit WDT before starting portal (WiFi mode changes can reset
   // it)
   esp_task_wdt_init(120, true);
   esp_task_wdt_add(NULL);
   AYLOG_I("✅ WDT re-inicializado en startPortal (120s)");
-#endif
 
   AYLOG_I("🌐 Portal cautivo activo en 192.168.4.1 (GET /, /scan, POST /save, "
           "POST /erase, GET /info)");
   ledSet(LedPattern::BLINK_SLOW);
 
-#if defined(ESP32)
   restartPortalTimeout();
-#endif
 }
 
 void AyresWiFiManager::stopPortal() {
@@ -993,11 +869,9 @@ void AyresWiFiManager::stopPortal() {
     return;
 
 // Detener timer de timeout si estaba armado
-#if defined(ESP32)
   if (_portalTimer)
     esp_timer_stop(_portalTimer);
   _portalTimeoutExpired = false;
-#endif
 
   stopDNS();
   server.stop();
@@ -1047,32 +921,14 @@ uint8_t AyresWiFiManager::softAPStationCount() {
   return WiFi.softAPgetStationNum();
 }
 
-bool AyresWiFiManager::portalHasTimedOut() {
-  if (portalTimeoutMs == 0)
-    return false;
-
-  if (apClientCheck && softAPStationCount() > 0) {
-    portalStart = AWM_now_ms();
-    return false;
-  }
-  unsigned long base = webClientCheck ? lastHttpAccess : portalStart;
-  return (AWM_now_ms() - base) > portalTimeoutMs;
-}
-
 /* --------------------------------- HTTP --------------------------------- */
 void AyresWiFiManager::handleRoot() {
-#if defined(ESP32)
   esp_task_wdt_reset(); // Feed WDT in HTTP handler
-#endif
 
   if (captivePortalRedirect())
     return;
-#if defined(ESP32)
   if (webClientCheck)
     restartPortalTimeout();
-#else
-  lastHttpAccess = AWM_now_ms();
-#endif
 
   String path = htmlPathPrefix + "index.html";
   if (LittleFS.exists(path)) {
@@ -1093,12 +949,8 @@ void AyresWiFiManager::handleRoot() {
 void AyresWiFiManager::handleSave() {
   if (captivePortalRedirect())
     return;
-#if defined(ESP32)
   if (webClientCheck)
     restartPortalTimeout();
-#else
-  lastHttpAccess = AWM_now_ms();
-#endif
 
   if (server.method() != HTTP_POST) {
     server.send(405, "text/plain", "Método no permitido");
@@ -1135,12 +987,8 @@ void AyresWiFiManager::handleSave() {
 void AyresWiFiManager::handleErase() {
   if (captivePortalRedirect())
     return;
-#if defined(ESP32)
   if (webClientCheck)
     restartPortalTimeout();
-#else
-  lastHttpAccess = AWM_now_ms();
-#endif
 
   if (server.method() != HTTP_POST) {
     server.send(405, "text/plain", "Método no permitido");
@@ -1197,13 +1045,9 @@ void AyresWiFiManager::handleErase() {
 }
 
 void AyresWiFiManager::handleScan() {
-#if defined(ESP32)
   esp_task_wdt_reset(); // Feed WDT before scan
   if (webClientCheck)
     restartPortalTimeout();
-#else
-  lastHttpAccess = AWM_now_ms();
-#endif
 
   AYLOG_I("🔍 Escaneando redes WiFi (ASYNC, AP+STA)…");
 
@@ -1238,7 +1082,6 @@ void AyresWiFiManager::handleScan() {
   // SYNC SCAN RÁPIDO: Con WDT de 120s podemos bloquear ~8s sin problema
   AYLOG_I("🔍 Escaneando redes WiFi...");
 
-#if defined(ESP32)
   // Configurar scan rápido en ESP32
   wifi_scan_config_t scanConf;
   scanConf.ssid = nullptr;
@@ -1251,9 +1094,6 @@ void AyresWiFiManager::handleScan() {
 
   esp_wifi_scan_start(&scanConf, true); // true = blocking (sync)
   int n = WiFi.scanComplete();
-#else
-  int n = WiFi.scanNetworks(false, false);
-#endif
 
   if (n < 0) {
     scanning = false;
@@ -1268,21 +1108,13 @@ void AyresWiFiManager::handleScan() {
   JsonArray arr = doc.to<JsonArray>();
 
   for (int i = 0; i < n; ++i) {
-#if defined(ESP32)
     esp_task_wdt_reset(); // Feed WDT durante procesamiento
-#endif
     JsonObject obj = arr.createNestedObject();
     obj["ssid"] = WiFi.SSID(i);
     obj["rssi"] = WiFi.RSSI(i);
-#if defined(ESP32)
     const bool secure = WiFi.encryptionType(i) != WIFI_AUTH_OPEN;
     obj["encryption"] = secure ? 1 : 0;
     obj["secure"] = secure;
-#else
-    const bool secure = WiFi.encryptionType(i) != ENC_TYPE_NONE;
-    obj["encryption"] = secure ? 1 : 0;
-    obj["secure"] = secure;
-#endif
   }
 
   // Guardar en cache
@@ -1302,12 +1134,8 @@ void AyresWiFiManager::handleScan() {
 void AyresWiFiManager::handleNotFound() {
   if (captivePortalRedirect())
     return;
-#if defined(ESP32)
   if (webClientCheck)
     restartPortalTimeout();
-#else
-  lastHttpAccess = AWM_now_ms();
-#endif
   server.sendHeader("Location", "/", true);
   server.send(302, "text/plain", "");
 }
@@ -1491,19 +1319,15 @@ bool AyresWiFiManager::connectToWiFi() {
   while (AWM_now_ms() - t0 < TOUT_MS) {
     if (WiFi.status() == WL_CONNECTED) {
       AYLOG_I("Conectado. IP: %s", WiFi.localIP().toString().c_str());
-#if defined(ESP32)
       WiFi.setSleep(false);
-#endif
       connected = true;
       _state = State::WIFI_CONNECTED;
       _lastError = Error::NONE;
       return true;
     }
     AWM_sleep_ms(250);
-#if defined(ESP32)
     // Alimentar watchdog durante el intento de conexión inicial
     esp_task_wdt_reset();
-#endif
   }
 
   AYLOG_W("⏱️ Tiempo agotado. No se pudo conectar.");
@@ -1695,9 +1519,7 @@ void AyresWiFiManager::reintentarConexionSiNecesario() {
       }
     }
     // Si no conecta ni da timeout, seguimos en WAITING (retorna al loop)
-#if defined(ESP32)
     esp_task_wdt_reset();
-#endif
     break;
   }
 }
@@ -1750,12 +1572,8 @@ void AyresWiFiManager::sincronizarHoraNTP() {
   // ⚙️ Timezone:
   //  - "UTC0"  → UTC en logs (default)
   //  - "<-03>3"→ Hora Argentina (sin DST)
-#if defined(ESP32)
   const char *tz = "UTC0";
   configTzTime(tz, "time.google.com", "time.cloudflare.com", "pool.ntp.org");
-#else
-  configTime(0, 0, "time.google.com", "time.cloudflare.com", "pool.ntp.org");
-#endif
   AYLOG_I("📡 Sincronizando hora (NTP)…");
 
   struct tm ti{};
@@ -1775,7 +1593,6 @@ void AyresWiFiManager::sincronizarHoraNTP() {
             maxTries);
 
     // Rotamos servidores por si alguno está lento/bloqueado
-#if defined(ESP32)
     switch (i) {
     case 0:
       configTzTime(tz, "pool.ntp.org", "time.nist.gov", "time.google.com");
@@ -1786,29 +1603,14 @@ void AyresWiFiManager::sincronizarHoraNTP() {
     default:
       break;
     }
-#else
-    switch (i) {
-    case 0:
-      configTime(0, 0, "pool.ntp.org", "time.nist.gov", "time.google.com");
-      break;
-    case 1:
-      configTime(0, 0, "time.cloudflare.com", "pool.ntp.org", "time.nist.gov");
-      break;
-    default:
-      break;
-    }
-#endif
   }
 
-#if defined(ESP32)
-  // Fallback “sí o sí” por HTTP Date si NTP no responde (solo ESP32)
+  // Fallback por HTTP Date si NTP no responde.
   AYLOG_W("🌐 NTP lento/bloqueado; intento fallback por HTTP Date…");
   if (AWM_syncTimeFromHttp_("http://google.com", 6000) ||
       AWM_syncTimeFromHttp_("http://worldtimeapi.org/api/ip", 8000)) {
     return;
   }
-#endif
-
   AYLOG_W("⚠️ No pude sincronizar hora (NTP/HTTP). Reintentaré luego.");
 }
 
@@ -1829,11 +1631,7 @@ bool AyresWiFiManager::hayInternet() {
   WiFiClient client;
   HTTPClient http;
   http.begin(client, "http://clients3.google.com/generate_204");
-#if defined(ESP32)
   http.setConnectTimeout(3000);
-#else
-  http.setTimeout(3000);
-#endif
   int httpCode = http.GET();
   http.end();
   const bool online = (httpCode == 204);
@@ -2044,9 +1842,7 @@ void AyresWiFiManager::eraseJsonInDir(const char *dirPath,
       AWM_LOGW("No se pudo borrar JSON: %s", path.c_str());
     }
 
-#if defined(ESP32)
     esp_task_wdt_reset();
-#endif
     if (_busyCallback)
       _busyCallback();
   }
@@ -2059,9 +1855,7 @@ void AyresWiFiManager::eraseJsonInDir(const char *dirPath,
   }
 }
 
-/* ====================== Portal timeout por esp_timer (ESP32)
- * ====================== */
-#if defined(ESP32)
+/* ====================== Portal timeout por esp_timer ====================== */
 void AyresWiFiManager::restartPortalTimeout() {
   if (!portalActive || portalTimeoutMs == 0)
     return;
@@ -2098,4 +1892,3 @@ void IRAM_ATTR AyresWiFiManager::_onScanTimerCallback(void *arg) {
   if (arg)
     reinterpret_cast<AyresWiFiManager *>(arg)->scanning = false;
 }
-#endif

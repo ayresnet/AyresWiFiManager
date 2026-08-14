@@ -19,7 +19,7 @@ AyresWiFiManager (AWM) is an ESP32 library for Wi-Fi provisioning and connectivi
 - Unified connectivity state and diagnostic information for application code.
 - Automatic LED patterns and boot-button actions.
 - Optional credential encryption at rest.
-- Optional compile-time logging and serial shell.
+- Optional compile-time logging.
 
 ## Compatibility
 
@@ -29,7 +29,7 @@ Version 2.3.0 officially supports:
 - ArduinoJson 6.21.2 or newer within major version 6.
 - LittleFS, DNSServer, WebServer and HTTPClient from the ESP32 Arduino core.
 
-ESP8266 is not an officially supported target in 2.3.0. It may be reconsidered after dedicated CI and hardware validation are available.
+Version 2.3.0 supports ESP32 exclusively.
 
 ## Installation
 
@@ -112,6 +112,20 @@ Available states:
 - `update()` serves HTTP and DNS requests, updates LED patterns and handles portal timeouts. Call it on every loop iteration.
 - `reintentarConexionSiNecesario()` advances the non-blocking reconnection state machine.
 
+## Connectivity checks, privacy and trust
+
+`hayInternet()` is an **optional reachability probe**, not a security check. When called, it performs an HTTP request to `http://clients3.google.com/generate_204` and returns `true` only for an HTTP `204` response. This updates `INTERNET_OK` or `NO_INTERNET`; it does not send the configured Wi-Fi SSID, Wi-Fi password, encryption key, portal form data, or application payload.
+
+After connecting, AWM also tries to synchronize time with NTP. If NTP is unavailable, it can use the public HTTP `Date` header from `http://google.com` or `http://worldtimeapi.org/api/ip` as a fallback. This fallback likewise does not transmit stored credentials.
+
+Because those probes use plain HTTP, a captive network, proxy, or malicious network can forge, redirect, or modify their response. Therefore:
+
+- Treat `hayInternet()` as a practical indication of network reachability, not proof that a connection is trusted or private.
+- Do not make authorization, payment, firmware-validation, or other security-sensitive decisions solely from `INTERNET_OK`, `NO_INTERNET`, or the HTTP time fallback.
+- Applications that exchange sensitive data must use their own HTTPS/TLS connection and validate the remote service as appropriate.
+
+HTTP is intentional here: it keeps the reachability test lightweight and compatible with captive networks. HTTPS can provide stronger authenticity, but requires certificate handling and consumes additional flash/RAM on constrained devices.
+
 ## Captive portal
 
 The portal uses these local endpoints:
@@ -170,6 +184,22 @@ wifi.begin();
 Use `false` instead of `true` for plaintext storage. Changing the value migrates an existing file automatically in either direction, provided the same key is supplied. The method returns `false` and leaves encryption disabled when the key is invalid.
 
 Do not commit a real key to a public repository. With encryption disabled, the file contains only `{"ssid":"...","password":"..."}`. With encryption enabled, the complete credential record is stored as one authenticated AES-128-GCM envelope represented by a single opaque JSON string, such as `"QVdNA..."`; it exposes no field names or algorithm metadata. Older encrypted objects and legacy CBC records are read and automatically migrated to this envelope. This still does not protect a device whose firmware and key can both be extracted; stronger threat models require hardware-backed storage.
+
+AWM deliberately does not embed an AES key. The sketch using the library supplies its own 16-byte key; each project must decide how to provision and protect it. For public source repositories, keep the real key outside version control (for example, in a private build configuration or external provisioning process).
+
+### Reusing credentials without exposing them
+
+Applications that need the stored Wi-Fi password for another local access check do not need to retrieve or duplicate it:
+
+```cpp
+wifi.setAPCredentialsUsingStoredPassword("Device-Control");
+
+if (wifi.verifyWiFiPassword(candidate)) {
+  // Authorized.
+}
+```
+
+`setAPCredentialsUsingStoredPassword()` configures the SoftAP inside AWM and returns `false` when the stored password is not valid for WPA (8 to 63 characters). `verifyWiFiPassword()` returns only a boolean and uses a comparison whose work does not depend on the first differing character. `getWiFiPass()` remains available for source compatibility, but new integrations should prefer these methods so the secret stays owned by AWM.
 
 ## Logging
 

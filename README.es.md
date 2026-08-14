@@ -19,7 +19,7 @@ AyresWiFiManager (AWM) es una librería para provisionar y administrar la conect
 - Estado único de conectividad y datos de diagnóstico para cualquier proyecto.
 - Patrones automáticos de LED y acciones mediante botón físico.
 - Cifrado opcional de credenciales en reposo.
-- Logging y shell serial opcionales.
+- Logging opcional en tiempo de compilaciÃ³n.
 
 ## Compatibilidad
 
@@ -29,7 +29,7 @@ La versión 2.3.0 soporta oficialmente:
 - ArduinoJson 6.21.2 o posterior dentro de la versión mayor 6.
 - LittleFS, DNSServer, WebServer y HTTPClient del core Arduino para ESP32.
 
-ESP8266 no es un destino oficialmente soportado en 2.3.0. Se puede reconsiderar cuando exista CI específica y validación en hardware.
+La versión 2.3.0 funciona exclusivamente con ESP32.
 
 ## Instalación
 
@@ -112,6 +112,20 @@ Estados disponibles:
 - `update()` atiende HTTP y DNS, actualiza el LED y controla el timeout del portal. Debe ejecutarse en cada vuelta del loop.
 - `reintentarConexionSiNecesario()` avanza la máquina de reconexión no bloqueante.
 
+## Comprobación de conectividad, privacidad y confianza
+
+`hayInternet()` es una **sonda opcional de alcance de red**, no una comprobación de seguridad. Cuando se la llama, realiza una petición HTTP a `http://clients3.google.com/generate_204` y devuelve `true` solamente si recibe HTTP `204`. Esto actualiza `INTERNET_OK` o `NO_INTERNET`; no envía el SSID configurado, la contraseña Wi-Fi, la clave de cifrado, los datos del formulario del portal ni datos de la aplicación.
+
+Luego de conectarse, AWM también intenta sincronizar la hora mediante NTP. Si NTP no está disponible, puede usar como respaldo la cabecera pública HTTP `Date` de `http://google.com` o `http://worldtimeapi.org/api/ip`. Este respaldo tampoco transmite las credenciales guardadas.
+
+Como esas comprobaciones usan HTTP sin cifrar, una red cautiva, un proxy o una red maliciosa puede falsificar, redirigir o modificar la respuesta. Por lo tanto:
+
+- Considerá `hayInternet()` una indicación práctica de alcance de red, no una prueba de que la conexión sea confiable o privada.
+- No tomes decisiones de autorización, pagos, validación de firmware u otras decisiones sensibles basándote únicamente en `INTERNET_OK`, `NO_INTERNET` o el respaldo horario por HTTP.
+- Si tu aplicación intercambia datos sensibles, debe usar su propia conexión HTTPS/TLS y validar el servicio remoto según corresponda.
+
+HTTP es intencional en este caso: mantiene la prueba de alcance liviana y compatible con redes cautivas. HTTPS puede aportar mayor autenticidad, pero requiere gestionar certificados y consume memoria flash/RAM adicional en dispositivos con recursos limitados.
+
 ## Portal cautivo
 
 | Método | Ruta | Función |
@@ -164,6 +178,22 @@ wifi.begin();
 Usá `false` en lugar de `true` para guardar en texto plano. Al cambiar el valor, un archivo existente se migra automáticamente en cualquier dirección siempre que se proporcione la misma clave. El método devuelve `false` y deja el cifrado desactivado si la clave no es válida.
 
 No publiques una clave real en el repositorio. Con el cifrado desactivado, el archivo contiene solamente `{"ssid":"...","password":"..."}`. Con el cifrado activado, el registro completo se guarda como un único sobre autenticado AES-128-GCM representado por una cadena JSON opaca, por ejemplo `"QVdNA..."`; no expone nombres de campos ni metadatos del algoritmo. Los objetos cifrados anteriores y los registros CBC heredados se leen y migran automáticamente a este sobre. Esto no protege un dispositivo si se pueden extraer tanto el firmware como la clave; para amenazas mayores se necesita almacenamiento respaldado por hardware.
+
+AWM deliberadamente no incorpora una clave AES. El sketch que usa la librería proporciona su propia clave de 16 bytes; cada proyecto debe decidir cómo provisionarla y protegerla. En repositorios públicos, mantené la clave real fuera del control de versiones (por ejemplo, en una configuración privada de compilación o mediante un proceso externo de provisionamiento).
+
+### Reutilizar credenciales sin exponerlas
+
+Si otro componente necesita comprobar la contraseÃ±a Wi-Fi para un acceso local, no hace falta obtenerla ni duplicarla:
+
+```cpp
+wifi.setAPCredentialsUsingStoredPassword("Control-Dispositivo");
+
+if (wifi.verifyWiFiPassword(claveIngresada)) {
+  // Acceso autorizado.
+}
+```
+
+`setAPCredentialsUsingStoredPassword()` configura el SoftAP dentro de AWM y devuelve `false` si la clave guardada no es vÃ¡lida para WPA (entre 8 y 63 caracteres). `verifyWiFiPassword()` devuelve solamente un booleano y realiza una comparaciÃ³n cuyo trabajo no depende del primer carÃ¡cter diferente. `getWiFiPass()` se conserva por compatibilidad, pero las integraciones nuevas deberÃ­an preferir estos mÃ©todos para que AWM siga siendo el Ãºnico propietario del secreto.
 
 ## Logging
 

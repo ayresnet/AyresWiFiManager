@@ -145,8 +145,6 @@
  *  ---------------------------------------------------------------------------
  *  2.3.0  (2026-08-07) ESP32-only release; unified connectivity state and
  *                      diagnostics; logger and documentation cleanup.
- *  2.2.1  (2025-12-15) ESP8266 compatibility fix: AUTH_OPEN vs WIFI_AUTH_OPEN.
- *                      Improved documentation headers with full changelog.
  *  2.2.0  (2025) NTP with rotation/timeouts; ESP32 HTTP Date fallback; TZ
  * "UTC0". 2.1.0  (2025) ESP32 moved to FreeRTOS ticks/vTaskDelay and esp_timer.
  *  2.0.x  (2024-2025) Fallback policies; reconnect tuning; JSON whitelist;
@@ -244,6 +242,9 @@ public:
   void setHtmlPathPrefix(const String &prefix);
   void setHostname(const String &host);
   void setAPCredentials(const String &ssid, const String &pass);
+  // Reutiliza internamente la clave Wi-Fi para el SoftAP sin exponerla.
+  // Devuelve false si no hay una clave WPA valida (8 a 63 caracteres).
+  bool setAPCredentialsUsingStoredPassword(const String &ssid);
   void setCaptivePortal(bool enabled);
   void setPortalTimeout(uint32_t seconds);
   void setAPClientCheck(bool enabled);
@@ -266,6 +267,9 @@ public:
   void reintentarConexionSiNecesario();
   bool hayInternet();
   bool tieneCredenciales() const;
+  // Comprueba una clave sin devolver la credencial almacenada.
+  bool verifyWiFiPassword(const String &candidate) const;
+  // Compatibilidad heredada. Preferir verifyWiFiPassword().
   String getWiFiPass() const;
 
   // ---------- diagnóstico ----------
@@ -311,7 +315,6 @@ private:
   void startDNS();
   void stopDNS();
   bool captivePortalRedirect();
-  bool portalHasTimedOut(); // usado solo en ESP8266
   void redirectToRoot();
   uint8_t softAPStationCount();
 

@@ -33,9 +33,6 @@ desktop.ini
 .idea/
 *.sublime-*
 
-# No versionar la shell local
-lib/AyresShell/
-
 # Test builds (si decides no versionar)
 # test/
 
@@ -47,3 +44,6 @@ src/*.txt
 # Backups
 *.zip.backup
 *.tar.gz.backup
+
+# Local helper used to generate gzip assets; do not publish it.
+ayres_gzip.py
