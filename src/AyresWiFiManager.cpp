@@ -76,6 +76,7 @@
 // Macros directas de AyresLog son usadas en el código, no hace falta mapeo
 
 #include <HTTPClient.h>
+#include <esp_mac.h>
 #include <esp_task_wdt.h> // Watchdog de hardware
 #include <esp_wifi.h>
 #include <freertos/FreeRTOS.h>
@@ -97,6 +98,27 @@ static inline uint32_t AWM_now_ms() {
   return (uint32_t)(xTaskGetTickCount() * portTICK_PERIOD_MS);
 }
 static inline void AWM_sleep_ms(uint32_t ms) { vTaskDelay(pdMS_TO_TICKS(ms)); }
+
+String AyresWiFiManager::getMacAddress() {
+  uint8_t mac[6]{};
+  if (esp_read_mac(mac, ESP_MAC_WIFI_STA) != ESP_OK)
+    return String();
+
+  char address[18]{};
+  snprintf(address, sizeof(address), "%02X:%02X:%02X:%02X:%02X:%02X",
+           mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+  return String(address);
+}
+
+String AyresWiFiManager::getMacSuffix() {
+  uint8_t mac[6]{};
+  if (esp_read_mac(mac, ESP_MAC_WIFI_STA) != ESP_OK)
+    return String();
+
+  char suffix[5]{};
+  snprintf(suffix, sizeof(suffix), "%02X%02X", mac[4], mac[5]);
+  return String(suffix);
+}
 
 /* ============================== Helpers NTP/Fecha
  * =============================== */

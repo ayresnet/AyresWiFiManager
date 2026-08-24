@@ -160,10 +160,10 @@
 #define AYRES_WIFI_MANAGER_H
 
 // ===== Versioning (public) =====
-#define AWM_VERSION "2.3.0"
+#define AWM_VERSION "2.3.1"
 #define AWM_VERSION_MAJOR 2
 #define AWM_VERSION_MINOR 3
-#define AWM_VERSION_PATCH 0
+#define AWM_VERSION_PATCH 1
 
 #include <Arduino.h>
 
@@ -237,6 +237,12 @@ public:
   void begin();
   void run();
   void update();
+
+  // Devuelve la MAC completa de la interfaz Station, por ejemplo
+  // "A4:CF:12:34:4C:25".
+  static String getMacAddress();
+  // Devuelve los ultimos cuatro caracteres hexadecimales, por ejemplo "4C25".
+  static String getMacSuffix();
 
   // ---------- configuración de portal/AP ----------
   void setHtmlPathPrefix(const String &prefix);

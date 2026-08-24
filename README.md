@@ -81,6 +81,16 @@ void loop() {
 
 Use an empty AP password for an open provisioning network, or at least eight characters for a protected SoftAP.
 
+To generate a unique setup name from the Station MAC:
+
+```cpp
+const String macSuffix = AyresWiFiManager::getMacSuffix(); // e.g. "4C25"
+wifi.setHostname(String("my-device-") + macSuffix);
+wifi.setAPCredentials(String("MyDevice-Setup-") + macSuffix, "change-me");
+
+const String fullMac = AyresWiFiManager::getMacAddress();
+```
+
 ## Connectivity state and diagnostics
 
 AWM exposes one primary state so applications do not need to combine several low-level checks:

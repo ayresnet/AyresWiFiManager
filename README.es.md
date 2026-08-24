@@ -81,6 +81,16 @@ void loop() {
 
 Usá una clave vacía para un AP abierto o una clave de ocho caracteres como mínimo para proteger la red de provisión.
 
+Para generar un nombre de configuración único a partir de la MAC Station:
+
+```cpp
+const String macSuffix = AyresWiFiManager::getMacSuffix(); // por ejemplo, "4C25"
+wifi.setHostname(String("mi-dispositivo-") + macSuffix);
+wifi.setAPCredentials(String("MiEquipo-Setup-") + macSuffix, "cambiar-clave");
+
+const String macCompleta = AyresWiFiManager::getMacAddress();
+```
+
 ## Estado y diagnóstico
 
 La aplicación puede consultar un único estado en vez de combinar varias funciones:

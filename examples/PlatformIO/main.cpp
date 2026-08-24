@@ -44,8 +44,10 @@ void setup() {
   AWM_LOGI("AyresWiFiManager %s - ejemplo PlatformIO", AWM_VERSION);
 
   // Configure the device hostname and the temporary setup access point.
-  wifiManager.setHostname("awm-test");
-  wifiManager.setAPCredentials("AWM-Setup", "12345678");
+  const String macSuffix = AyresWiFiManager::getMacSuffix();
+  wifiManager.setHostname(String("awm-test-") + macSuffix);
+  wifiManager.setAPCredentials(String("AWM-Setup-") + macSuffix, "12345678");
+  AWM_LOGI("MAC Station: %s", AyresWiFiManager::getMacAddress().c_str());
   // Enable the captive portal and stop waiting after five minutes.
   wifiManager.setCaptivePortal(true);
   wifiManager.setPortalTimeout(300);
