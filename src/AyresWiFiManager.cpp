@@ -875,7 +875,21 @@ void AyresWiFiManager::startPortal() {
 
   // CRITICAL: Reinit WDT before starting portal (WiFi mode changes can reset
   // it)
+#if defined(ESP_ARDUINO_VERSION) &&                                             \
+    ESP_ARDUINO_VERSION >= ESP_ARDUINO_VERSION_VAL(3, 0, 0)
+  // ESP-IDF v5 / Arduino-ESP32 core 3.x: esp_task_wdt_init() takes a config
+  // struct, and the Task WDT is already started at boot, so reconfigure it
+  // instead of re-initialising.
+  esp_task_wdt_config_t wdt_cfg = {
+      .timeout_ms = 120000,
+      .idle_core_mask = 0,
+      .trigger_panic = true,
+  };
+  if (esp_task_wdt_init(&wdt_cfg) == ESP_ERR_INVALID_STATE)
+    esp_task_wdt_reconfigure(&wdt_cfg);
+#else
   esp_task_wdt_init(120, true);
+#endif
   esp_task_wdt_add(NULL);
   AYLOG_I("✅ WDT re-inicializado en startPortal (120s)");
 
