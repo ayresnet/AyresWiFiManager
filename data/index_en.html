@@ -674,8 +674,15 @@
             lock.className = "lock";
             lock.textContent = n.secure ? "🔒" : "🔓";
 
+            // SSIDs come from nearby networks, so set them as text, never as HTML.
             const name = document.createElement("div");
-            name.innerHTML = `<div class="ssid">${n.ssid}</div><div class="meta">${n.rssi} dBm</div>`;
+            const ssid = document.createElement("div");
+            ssid.className = "ssid";
+            ssid.textContent = n.ssid;
+            const meta = document.createElement("div");
+            meta.className = "meta";
+            meta.textContent = `${n.rssi} dBm`;
+            name.append(ssid, meta);
 
             const sig = bars(n.rssi);
             const qual = qualityTag(n.rssi);
