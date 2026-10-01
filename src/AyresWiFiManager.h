@@ -415,6 +415,10 @@ private:
   bool scanning = false;
   unsigned long scanningUntil = 0;
 
+  // Task WDT: this task is subscribed in startPortal() and stays subscribed.
+  bool wdtSubscribed = false;
+  void feedWatchdog();
+
   // GPIO
   uint8_t ledPin, buttonPin;
 

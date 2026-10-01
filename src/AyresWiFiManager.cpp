@@ -730,10 +730,18 @@ void AyresWiFiManager::run() {
   }
 }
 
+// Feed the Task WDT only once this task is subscribed (first startPortal()).
+// Before that, esp_task_wdt_reset() logs "task not found" on every call
+// under ESP-IDF v5 (Arduino-ESP32 core 3.x).
+void AyresWiFiManager::feedWatchdog() {
+  if (wdtSubscribed)
+    esp_task_wdt_reset();
+}
+
 /* =================================== UPDATE
  * =================================== */
 void AyresWiFiManager::update() {
-  esp_task_wdt_reset(); // FEED DOG in inner loop
+  feedWatchdog(); // FEED DOG in inner loop
   server.handleClient();
   if (dnsRunning)
     dns.processNextRequest();
@@ -876,7 +884,9 @@ void AyresWiFiManager::startPortal() {
   // CRITICAL: Reinit WDT before starting portal (WiFi mode changes can reset
   // it)
   esp_task_wdt_init(120, true);
-  esp_task_wdt_add(NULL);
+  // Subscribe once; adding again on a portal reopen only logs an error.
+  if (!wdtSubscribed)
+    wdtSubscribed = (esp_task_wdt_add(NULL) == ESP_OK);
   AYLOG_I("✅ WDT re-inicializado en startPortal (120s)");
 
   AYLOG_I("🌐 Portal cautivo activo en 192.168.4.1 (GET /, /scan, POST /save, "
@@ -945,7 +955,7 @@ uint8_t AyresWiFiManager::softAPStationCount() {
 
 /* --------------------------------- HTTP --------------------------------- */
 void AyresWiFiManager::handleRoot() {
-  esp_task_wdt_reset(); // Feed WDT in HTTP handler
+  feedWatchdog(); // Feed WDT in HTTP handler
 
   if (captivePortalRedirect())
     return;
@@ -1067,7 +1077,7 @@ void AyresWiFiManager::handleErase() {
 }
 
 void AyresWiFiManager::handleScan() {
-  esp_task_wdt_reset(); // Feed WDT before scan
+  feedWatchdog(); // Feed WDT before scan
   if (webClientCheck)
     restartPortalTimeout();
 
@@ -1104,18 +1114,11 @@ void AyresWiFiManager::handleScan() {
   // SYNC SCAN RÁPIDO: Con WDT de 120s podemos bloquear ~8s sin problema
   AYLOG_I("🔍 Escaneando redes WiFi...");
 
-  // Configurar scan rápido en ESP32
-  wifi_scan_config_t scanConf;
-  scanConf.ssid = nullptr;
-  scanConf.bssid = nullptr;
-  scanConf.channel = 0; // all channels
-  scanConf.show_hidden = false;
-  scanConf.scan_type = WIFI_SCAN_TYPE_ACTIVE;
-  scanConf.scan_time.active.min = 0;
-  scanConf.scan_time.active.max = 120; // 120ms max por canal
-
-  esp_wifi_scan_start(&scanConf, true); // true = blocking (sync)
-  int n = WiFi.scanComplete();
+  // Sync active scan, 120 ms max per channel. Go through WiFi.scanNetworks()
+  // rather than esp_wifi_scan_start(): on core 3.x the WiFi class ignores the
+  // scan-done event of a scan it did not start, so scanComplete() reported
+  // WIFI_SCAN_FAILED and the portal always got an empty list.
+  int n = WiFi.scanNetworks(false, false, false, 120);
 
   if (n < 0) {
     scanning = false;
@@ -1130,7 +1133,7 @@ void AyresWiFiManager::handleScan() {
   JsonArray arr = doc.to<JsonArray>();
 
   for (int i = 0; i < n; ++i) {
-    esp_task_wdt_reset(); // Feed WDT durante procesamiento
+    feedWatchdog(); // Feed WDT durante procesamiento
     JsonObject obj = arr.createNestedObject();
     obj["ssid"] = WiFi.SSID(i);
     obj["rssi"] = WiFi.RSSI(i);
@@ -1349,7 +1352,7 @@ bool AyresWiFiManager::connectToWiFi() {
     }
     AWM_sleep_ms(250);
     // Alimentar watchdog durante el intento de conexión inicial
-    esp_task_wdt_reset();
+    feedWatchdog();
   }
 
   AYLOG_W("⏱️ Tiempo agotado. No se pudo conectar.");
@@ -1541,7 +1544,7 @@ void AyresWiFiManager::reintentarConexionSiNecesario() {
       }
     }
     // Si no conecta ni da timeout, seguimos en WAITING (retorna al loop)
-    esp_task_wdt_reset();
+    feedWatchdog();
     break;
   }
 }
@@ -1864,7 +1867,7 @@ void AyresWiFiManager::eraseJsonInDir(const char *dirPath,
       AWM_LOGW("No se pudo borrar JSON: %s", path.c_str());
     }
 
-    esp_task_wdt_reset();
+    feedWatchdog();
     if (_busyCallback)
       _busyCallback();
   }
