@@ -36,11 +36,11 @@
  *  HTTP ROUTES (served locally)
  *  ---------------------------------------------------------------------------
  *    GET  /                -> index.html
- *    POST /save            -> store credentials and reboot
- *    POST /erase           -> scope=wifi or scope=all; restarts on success
+ *    POST /save            -> store credentials and reboot (CSRF token required)
+ *    POST /erase           -> scope=wifi or scope=all; CSRF token required
  *    GET  /scan or /scan.json
  *                           -> Wi-Fi list: [{ "ssid","rssi","secure" }]
- *    GET  /info            -> { name, version, version_code, ap, host, ap_ip }
+ *    GET  /info            -> { name, version, version_code, ap, host, ap_ip, csrf }
  *    Captive redirectors: /generate_204, /gen_204, /hotspot-detect.html,
  *                         /connecttest.txt, /ncsi.txt, /fwlink  -> 302 to /
  *
@@ -143,6 +143,10 @@
  *
  *  CHANGELOG (Semantic Versioning)
  *  ---------------------------------------------------------------------------
+ *  3.0.0  (2026-11-19) Protect SSID rendering and portal POST requests;
+ *                      async Wi-Fi scans; compatible task watchdog handling
+ *                      with Arduino-ESP32 Core 2.x and 3.x. Custom clients
+ *                      must submit the portal token for /save and /erase.
  *  2.3.0  (2026-08-07) ESP32-only release; unified connectivity state and
  *                      diagnostics; logger and documentation cleanup.
  *  2.2.0  (2025) NTP with rotation/timeouts; ESP32 HTTP Date fallback; TZ
@@ -160,10 +164,10 @@
 #define AYRES_WIFI_MANAGER_H
 
 // ===== Versioning (public) =====
-#define AWM_VERSION "2.3.1"
-#define AWM_VERSION_MAJOR 2
-#define AWM_VERSION_MINOR 3
-#define AWM_VERSION_PATCH 1
+#define AWM_VERSION "3.0.0"
+#define AWM_VERSION_MAJOR 3
+#define AWM_VERSION_MINOR 0
+#define AWM_VERSION_PATCH 0
 
 #include <Arduino.h>
 
@@ -172,7 +176,7 @@
 #include <WiFi.h>
 #include <esp_timer.h>
 #else
-#error "AyresWiFiManager 2.3.0 supports ESP32 only"
+#error "AyresWiFiManager 3.0.0 supports ESP32 only"
 #endif
 
 #include <DNSServer.h>
@@ -314,7 +318,7 @@ public:
 
 private:
   // ---------- portal AP/DNS/HTTP ----------
-  void setupAP();
+  bool setupAP();
   void startPortal();
   void stopPortal();
   void setupHTTPRoutes();
@@ -370,6 +374,7 @@ private:
   // servidor / dns
   WebServer server{80};
   DNSServer dns;
+  String portalToken;
   bool portalActive = false;
   bool dnsRunning = false;
 

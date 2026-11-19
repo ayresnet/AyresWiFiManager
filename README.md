@@ -1,6 +1,6 @@
 # AyresWiFiManager
 
-[![Version](https://img.shields.io/badge/version-2.3.0-4361ee)](https://github.com/ayresnet/AyresWiFiManager)
+[![Version](https://img.shields.io/badge/version-3.0.0-4361ee)](https://github.com/ayresnet/AyresWiFiManager)
 [![Platform](https://img.shields.io/badge/platform-ESP32-2ec27e?logo=espressif)](https://www.espressif.com/en/products/socs/esp32)
 [![Arduino](https://img.shields.io/badge/framework-Arduino-00979d?logo=arduino)](https://www.arduino.cc/)
 [![License](https://img.shields.io/badge/license-MIT-6c757d)](LICENSE)
@@ -21,15 +21,23 @@ AyresWiFiManager (AWM) is an ESP32 library for Wi-Fi provisioning and connectivi
 - Optional credential encryption at rest.
 - Optional compile-time logging.
 
+## Changes in 3.0.0
+
+- The portal displays network names as text and requires a CSRF token for `/save` and `/erase`.
+- Custom pages and HTTP clients must read the token from `/info` and send it in the `csrf` form field.
+- Wi-Fi scans are asynchronous: `/scan` may return HTTP 202 while a scan is in progress.
+- The library no longer configures the application's task watchdog; it feeds an already subscribed calling task.
+- Compilation was checked on an ESP32 with Arduino-ESP32 Core 2.0.17 and 3.3.12.
+
 ## Compatibility
 
-Version 2.3.0 officially supports:
+Version 3.0.0 officially supports:
 
 - ESP32 using the Arduino framework.
 - ArduinoJson 6.21.2 or newer within major version 6.
 - LittleFS, DNSServer, WebServer and HTTPClient from the ESP32 Arduino core.
 
-Version 2.3.0 supports ESP32 exclusively.
+Version 3.0.0 supports ESP32 exclusively.
 
 ## Installation
 
@@ -47,7 +55,7 @@ framework = arduino
 board_build.filesystem = littlefs
 
 lib_deps =
-  ayresnet/AyresWiFiManager@^2.3.0
+  ayresnet/AyresWiFiManager@^3.0.0
 ```
 
 ## Quick start
@@ -235,38 +243,24 @@ src/           Public headers and library implementation
 
 The local `src/main.cpp` development harness is intentionally ignored and is not distributed as part of the library.
 
-## AyresNet GZIP Asset Compiler
+## Embedded portal assets
 
-The repository includes `ayres_gzip.py`, a dependency-free tool developed by AyresNet. It has no hardcoded input files or output directories. Running it without arguments opens an interactive wizard:
-
-```bash
-python ayres_gzip.py
-```
-
-The wizard accepts one or more files, folders, or glob patterns and asks where to create the `.h` or `.hpp` header. The same operations can be automated from the command line:
+The firmware includes compressed copies of `data/index.html`, `data/success.html`, and `data/error.html`. After changing a source page, regenerate `src/AWM_html_gz.h` with your asset generator. The optional `ayres_gzip.py` tool is ignored by Git and is not included in this repository. Check that the embedded pages match their source files with:
 
 ```bash
-# One file
-python ayres_gzip.py web/index.html -o include/web_gz.h
-
-# Multiple files
-python ayres_gzip.py web/index.html web/app.css web/app.js -o include/web_gz.h
-
-# A complete directory, including subdirectories
-python ayres_gzip.py web -r -o include/web_gz.h
-
-# Selected file types and portable C++ output
-python ayres_gzip.py assets -r -I "*.html" -I "*.css" -o include/assets_gz.hpp -f cpp -p MY_APP
+python scripts/check_embedded_pages.py
 ```
-
-To regenerate this library's embedded portal explicitly:
-
-```bash
-python ayres_gzip.py data/index.html data/success.html data/error.html -o src/AWM_html_gz.h
-```
-
-Use `--check` with the same arguments in CI to fail when a header is outdated. Generated GZIP streams omit timestamps and source filenames, producing stable Git diffs. Run `python ayres_gzip.py -h` or `python ayres_gzip.py --help` for all options.
 
 ## License
 
 MIT © AyresNet. See [LICENSE](LICENSE).
+
+## Portal security and compatibility
+
+The default AP password is `123456789`. Examples use `12345678`; applications may set their own password with `setAPCredentials`. A known shared password allows anyone who knows it to access the portal while it is open.
+
+The portal requires a per-start CSRF token for POST `/save` and `/erase`. Custom pages and HTTP clients must read `csrf` from GET `/info` and submit it as a `csrf` form field. Upload updated LittleFS pages together with the firmware; old custom pages will be rejected. This token is not user authentication: use a strong, unique AP password and restrict network access to the portal. Portal HTTP is not encrypted.
+
+The library does not configure or subscribe tasks to the global task watchdog. It feeds the calling task only if the application already subscribed it; configure watchdog timeouts in the application, accounting for blocking operations in the application.
+
+Warning: `LittleFS.begin(true)` may format LittleFS after a mount failure and delete stored files. Back up device data and assess this behavior before production use. Credential encryption is optional; if disabled, credentials are stored in plaintext.

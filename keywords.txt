@@ -11,6 +11,10 @@ AyresWiFiManager	KEYWORD1
 #######################################
 # Methods (KEYWORD2)
 #######################################
+versionString	KEYWORD2
+versionCode	KEYWORD2
+getMacAddress	KEYWORD2
+getMacSuffix	KEYWORD2
 begin	KEYWORD2
 run	KEYWORD2
 update	KEYWORD2
@@ -20,6 +24,7 @@ isPortalActive	KEYWORD2
 setHtmlPathPrefix	KEYWORD2
 setHostname	KEYWORD2
 setAPCredentials	KEYWORD2
+setAPCredentialsUsingStoredPassword	KEYWORD2
 setCaptivePortal	KEYWORD2
 setPortalTimeout	KEYWORD2
 setAPClientCheck	KEYWORD2
@@ -29,6 +34,16 @@ setSmartRetries	KEYWORD2
 enableButtonPortal	KEYWORD2
 setAutoReconnect	KEYWORD2
 isConnected	KEYWORD2
+getSignalStrength	KEYWORD2
+getTimestamp	KEYWORD2
+verifyWiFiPassword	KEYWORD2
+getWiFiPass	KEYWORD2
+getState	KEYWORD2
+stateToString	KEYWORD2
+getLastError	KEYWORD2
+errorToString	KEYWORD2
+getReconnectCount	KEYWORD2
+getLastInternetCheck	KEYWORD2
 connectToWiFi	KEYWORD2
 reintentarConexionSiNecesario	KEYWORD2
 hayInternet	KEYWORD2
@@ -42,6 +57,11 @@ setReconnectBackoffMs	KEYWORD2
 setReconnectAttemptMs	KEYWORD2
 setExternalApActive	KEYWORD2
 isExternalApActive	KEYWORD2
+setBusyCallback	KEYWORD2
+setCredentialEncryption	KEYWORD2
+enableCredentialEncryption	KEYWORD2
+disableCredentialEncryption	KEYWORD2
+isEncryptionEnabled	KEYWORD2
 
 #######################################
 # Constants / Literals
@@ -56,3 +76,5 @@ AWM_VERSION_PATCH	LITERAL1
 #######################################
 FallbackPolicy	KEYWORD1
 LedPattern	KEYWORD1
+State	KEYWORD1
+Error	KEYWORD1

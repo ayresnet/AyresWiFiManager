@@ -40,12 +40,12 @@ jobs:
         pip install platformio
 
     - name: Verify embedded portal assets
-      run: python ayres_gzip.py data/index.html data/success.html data/error.html -o src/AWM_html_gz.h --check
+      run: python scripts/check_embedded_pages.py
 
-    - name: Build minimal example for ESP32
-      run: pio ci examples/AWM_Minimal/AWM_Minimal.ino --lib=. --board=esp32dev
+    - name: Build Arduino example for ESP32
+      run: pio ci examples/Arduino/example.ino --lib=. --board=esp32dev
 
-    - name: Build advanced example for ESP32
-      run: pio ci examples/AWM_Advanced/AWM_Advanced.ino --lib=. --board=esp32dev
+    - name: Build PlatformIO example for ESP32
+      run: pio ci examples/PlatformIO/main.cpp --lib=. --board=esp32dev
 
 

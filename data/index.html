@@ -632,6 +632,7 @@
       <section class="sec">
         <h2>Conectar</h2>
         <form id="form" method="POST" action="/save" autocomplete="off">
+          <input type="hidden" name="csrf" id="csrf" value="">
           <div class="row">
             <label for="ssid">SSID</label>
             <input id="ssid" class="input grow" name="ssid" required placeholder="Nombre de la red" />
@@ -785,6 +786,21 @@
         }
       }
 
+      // Requests that change configuration require the per-portal token.
+      const csrfInput = document.getElementById('csrf');
+      const form = document.getElementById('form');
+      let portalToken = '';
+      const tokenReady = fetch('/info', { cache: 'no-store' })
+        .then(response => { if (!response.ok) throw new Error('info'); return response.json(); })
+        .then(info => { portalToken = info.csrf || ''; csrfInput.value = portalToken; });
+      form.addEventListener('submit', async event => {
+        if (csrfInput.value) return;
+        event.stopImmediatePropagation();
+        event.preventDefault();
+        try { await tokenReady; if (csrfInput.value) form.requestSubmit(); }
+        catch (_) { alert('Unable to verify the configuration portal. Reload the page.'); }
+      });
+
       function rssiLevel(rssi) {
         if (rssi >= -50) return 4;
         if (rssi >= -60) return 3;
@@ -844,7 +860,13 @@
           const lock = document.createElement('span'); lock.className = 'lock'; lock.textContent = n.secure ? '🔒' : '🔓';
 
           const name = document.createElement('div');
-          name.innerHTML = `<div class="ssid">${n.ssid}</div><div class="meta">${n.rssi} dBm</div>`;
+          const ssidNode = document.createElement('div');
+          ssidNode.className = 'ssid';
+          ssidNode.textContent = n.ssid;
+          const metaNode = document.createElement('div');
+          metaNode.className = 'meta';
+          metaNode.textContent = `${n.rssi} dBm`;
+          name.append(ssidNode, metaNode);
 
           const sig = bars(n.rssi);
           const qual = qualityTag(n.rssi);
@@ -868,6 +890,11 @@
           els.btnScan.disabled = true;
           els.status.textContent = 'Escaneando…';
           let resp = await fetch('/scan', { cache: 'no-store' });
+          for (let attempts = 0; resp.status === 202 && attempts < 40; attempts++) {
+            await new Promise(resolve => setTimeout(resolve, 500));
+            resp = await fetch('/scan', { cache: 'no-store' });
+          }
+          if (resp.status === 202) throw new Error('Scan timed out');
           if (!resp.ok) throw new Error('HTTP ' + resp.status);
           let data = await resp.json();
           if (!Array.isArray(data)) data = (data && data.networks) || [];
@@ -933,7 +960,9 @@
           : 'Buscando y eliminando archivos JSON…';
 
         try {
+          await tokenReady;
           const body = new URLSearchParams();
+          body.set('csrf', portalToken);
           body.set('scope', scope);
           body.set('confirm', scope === 'wifi' ? 'WIFI_ONLY' : 'DELETE_ALL_JSON');
           if (scope === 'all') body.set('force', '1');

@@ -2,7 +2,7 @@
  *  AyresWiFiManager — Firmware Library
  *  =========================================================================
  *  Archivo   : AyresWiFiManager.cpp
- *  Versión   : 2.3.0
+ *  Versión   : 3.0.0
  *  Autor     : Daniel C. Salgado
  *  Empresa   : AyresNet IoT Systems
  *  Repositorio: https://github.com/ayresnet/AyresWiFiManager
@@ -28,6 +28,13 @@
  *
  *  CHANGELOG (Semantic Versioning)
  *  =========================================================================
+ *  v3.0.0 (2026-11-19)
+ *    + Render nearby SSIDs as text in the portal
+ *    + Per-portal CSRF token for credential save and erase requests
+ *    + Asynchronous Wi-Fi scan and correctly serialized portal info
+ *    + Task watchdog handling compatible with Arduino-ESP32 Core 2.x/3.x
+ *    ! Custom portal pages and clients must submit the CSRF token
+ *
  *  v2.3.0 (2026-08-07)
  *    + Estado unificado de conectividad y diagnóstico público
  *    + Logging y documentación preparados para uso como librería
@@ -98,6 +105,12 @@ static inline uint32_t AWM_now_ms() {
   return (uint32_t)(xTaskGetTickCount() * portTICK_PERIOD_MS);
 }
 static inline void AWM_sleep_ms(uint32_t ms) { vTaskDelay(pdMS_TO_TICKS(ms)); }
+// Do not change the application's global watchdog configuration or register
+// a task behind its back. Feed it only when the current task is subscribed.
+static void AWM_feedWatchdog() {
+  if (esp_task_wdt_status(nullptr) == ESP_OK)
+    esp_task_wdt_reset();
+}
 
 String AyresWiFiManager::getMacAddress() {
   uint8_t mac[6]{};
@@ -733,7 +746,7 @@ void AyresWiFiManager::run() {
 /* =================================== UPDATE
  * =================================== */
 void AyresWiFiManager::update() {
-  esp_task_wdt_reset(); // FEED DOG in inner loop
+  AWM_feedWatchdog();
   server.handleClient();
   if (dnsRunning)
     dns.processNextRequest();
@@ -792,25 +805,17 @@ void AyresWiFiManager::setupHTTPRoutes() {
     if (apIp == "0.0.0.0")
       apIp = apIP.toString();
 
+    StaticJsonDocument<512> info;
+    info["name"] = "AyresWiFiManager";
+    info["version"] = AyresWiFiManager::versionString();
+    info["version_code"] = AyresWiFiManager::versionCode();
+    info["ap"] = WiFi.softAPSSID();
+    info["host"] = hostStr;
+    info["ap_ip"] = apIp;
+    info["csrf"] = portalToken;
     String json;
-    json.reserve(192);
-    json = F("{\"name\":\"AyresWiFiManager\"");
-    json += F(",\"version\":\"");
-    json += AyresWiFiManager::versionString();
-    json += '"';
-    json += F(",\"version_code\":");
-    json += AyresWiFiManager::versionCode();
-    json += F(",\"ap\":\"");
-    json += WiFi.softAPSSID();
-    json += '"';
-    json += F(",\"host\":\"");
-    json += hostStr;
-    json += '"';
-    json += F(",\"ap_ip\":\"");
-    json += apIp;
-    json += '"';
-    json += '}';
-
+    serializeJson(info, json);
+    server.sendHeader("Cache-Control", "no-store");
     server.send(200, "application/json", json);
   });
 
@@ -842,7 +847,7 @@ void AyresWiFiManager::stopDNS() {
   dnsRunning = false;
 }
 
-void AyresWiFiManager::setupAP() {
+bool AyresWiFiManager::setupAP() {
   // FIXED: Usamos AP_STA de entrada para evitar que el cambio de modo
   // en handleScan() desconecte a los clientes.
   if (WiFi.getMode() != WIFI_AP_STA) {
@@ -850,17 +855,33 @@ void AyresWiFiManager::setupAP() {
     AWM_sleep_ms(100); // Give time for hardware to settle
   }
 
-  WiFi.softAPConfig(apIP, apGW, apSN);
-  WiFi.softAP(apSSID.c_str(), apPASS.c_str());
+  if (!apPASS.isEmpty() && (apPASS.length() < 8 || apPASS.length() > 63)) {
+    AYLOG_E("La clave del AP debe tener entre 8 y 63 bytes");
+    return false;
+  }
+  if (!WiFi.softAPConfig(apIP, apGW, apSN) ||
+      !WiFi.softAP(apSSID.c_str(), apPASS.c_str())) {
+    AYLOG_E("No se pudo iniciar el punto de acceso de configuracion");
+    return false;
+  }
   if (hostname.length())
     WiFi.softAPsetHostname(hostname.c_str());
   AYLOG_I("📡 AP: %s | IP %s", apSSID.c_str(), apIP.toString().c_str());
+  return true;
 }
 
 void AyresWiFiManager::startPortal() {
   if (portalActive)
     return;
-  setupAP();
+  if (!setupAP()) {
+    portalToken = "";
+    return;
+  }
+  char token[33];
+  snprintf(token, sizeof(token), "%08lx%08lx%08lx%08lx",
+           (unsigned long)esp_random(), (unsigned long)esp_random(),
+           (unsigned long)esp_random(), (unsigned long)esp_random());
+  portalToken = token;
   setupHTTPRoutes();
   server.begin();
 
@@ -872,12 +893,6 @@ void AyresWiFiManager::startPortal() {
   portalActive = true;
   portalStart = AWM_now_ms();
   lastHttpAccess = portalStart;
-
-  // CRITICAL: Reinit WDT before starting portal (WiFi mode changes can reset
-  // it)
-  esp_task_wdt_init(120, true);
-  esp_task_wdt_add(NULL);
-  AYLOG_I("✅ WDT re-inicializado en startPortal (120s)");
 
   AYLOG_I("🌐 Portal cautivo activo en 192.168.4.1 (GET /, /scan, POST /save, "
           "POST /erase, GET /info)");
@@ -905,6 +920,7 @@ void AyresWiFiManager::stopPortal() {
   }
 
   portalActive = false;
+  portalToken = "";
 
   _state = (WiFi.status() == WL_CONNECTED) ? State::WIFI_CONNECTED
                                             : State::OFFLINE;
@@ -945,7 +961,7 @@ uint8_t AyresWiFiManager::softAPStationCount() {
 
 /* --------------------------------- HTTP --------------------------------- */
 void AyresWiFiManager::handleRoot() {
-  esp_task_wdt_reset(); // Feed WDT in HTTP handler
+  AWM_feedWatchdog();
 
   if (captivePortalRedirect())
     return;
@@ -979,9 +995,13 @@ void AyresWiFiManager::handleSave() {
     return;
   }
 
+  if (portalToken.isEmpty() || server.arg("csrf") != portalToken) {
+    server.send(403, "text/plain", "Invalid portal token");
+    return;
+  }
   String inSsid = server.arg("ssid");
   String inPass = server.arg("password");
-  if (inSsid.isEmpty()) {
+  if (inSsid.isEmpty() || inSsid.length() > 32 || inPass.length() > 63) {
     mostrarPaginaError("El nombre de la red Wi-Fi es obligatorio.");
     return;
   }
@@ -1017,6 +1037,10 @@ void AyresWiFiManager::handleErase() {
     return;
   }
 
+  if (portalToken.isEmpty() || server.arg("csrf") != portalToken) {
+    server.send(403, "application/json", "{\"ok\":false,\"error\":\"invalid_token\"}");
+    return;
+  }
   const String scope = server.arg("scope");
   const String confirmation = server.arg("confirm");
   EraseResult result;
@@ -1067,7 +1091,7 @@ void AyresWiFiManager::handleErase() {
 }
 
 void AyresWiFiManager::handleScan() {
-  esp_task_wdt_reset(); // Feed WDT before scan
+  AWM_feedWatchdog();
   if (webClientCheck)
     restartPortalTimeout();
 
@@ -1076,67 +1100,52 @@ void AyresWiFiManager::handleScan() {
   WiFi.mode(WIFI_AP_STA);
   AWM_sleep_ms(50);
 
-  int st = WiFi.scanComplete();
-
-  // Si hay scan en curso, informar que está en progreso
-  if (st == WIFI_SCAN_RUNNING) {
-    server.send(202, "application/json", "{\"scanning\":true}");
-    AYLOG_I("⏳ Escaneo en progreso…");
-    return;
-  }
-
-  // LED: marcar escaneo
-  scanning = true;
-
-  // CACHE: Si escaneamos hace muy poco, devolvemos el último resultado
   if (AWM_now_ms() - lastScanAt < 20000 && !lastScanJson.isEmpty()) {
     server.send(200, "application/json", lastScanJson);
-    scanning = false;
-    AYLOG_I("📋 Usando cache de escaneo");
     return;
   }
 
-  // Si hay resultados viejos, limpiarlos
-  if (st >= 0) {
-    WiFi.scanDelete();
+  const int n = WiFi.scanComplete();
+  if (n == WIFI_SCAN_RUNNING) {
+    server.send(202, "application/json", "{\"scanning\":true}");
+    return;
   }
-
-  // SYNC SCAN RÁPIDO: Con WDT de 120s podemos bloquear ~8s sin problema
-  AYLOG_I("🔍 Escaneando redes WiFi...");
-
-  // Configurar scan rápido en ESP32
-  wifi_scan_config_t scanConf;
-  scanConf.ssid = nullptr;
-  scanConf.bssid = nullptr;
-  scanConf.channel = 0; // all channels
-  scanConf.show_hidden = false;
-  scanConf.scan_type = WIFI_SCAN_TYPE_ACTIVE;
-  scanConf.scan_time.active.min = 0;
-  scanConf.scan_time.active.max = 120; // 120ms max por canal
-
-  esp_wifi_scan_start(&scanConf, true); // true = blocking (sync)
-  int n = WiFi.scanComplete();
-
   if (n < 0) {
-    scanning = false;
-    server.send(200, "application/json", "[]");
-    AYLOG_W("⚠️ Escaneo falló, devolviendo []");
+    WiFi.scanDelete();
+    if (WiFi.scanNetworks(true, false, false, 120) == WIFI_SCAN_FAILED) {
+      server.send(503, "application/json", "{\"error\":\"scan_failed\"}");
+      return;
+    }
+    server.send(202, "application/json", "{\"scanning\":true}");
     return;
   }
-
-  AYLOG_I("✅ Escaneo OK: %d redes", n);
-
-  DynamicJsonDocument doc(2048);
+  scanning = true;
+  // Bound memory usage in crowded areas and report allocation failures.
+  const int count = n < 50 ? n : 50;
+  DynamicJsonDocument doc(512 + count * 200);
+  if (doc.capacity() == 0) {
+    WiFi.scanDelete();
+    scanning = false;
+    server.send(503, "application/json", "{\"error\":\"out_of_memory\"}");
+    return;
+  }
   JsonArray arr = doc.to<JsonArray>();
 
-  for (int i = 0; i < n; ++i) {
-    esp_task_wdt_reset(); // Feed WDT durante procesamiento
+  for (int i = 0; i < count; ++i) {
+    AWM_feedWatchdog();
     JsonObject obj = arr.createNestedObject();
     obj["ssid"] = WiFi.SSID(i);
     obj["rssi"] = WiFi.RSSI(i);
     const bool secure = WiFi.encryptionType(i) != WIFI_AUTH_OPEN;
     obj["encryption"] = secure ? 1 : 0;
     obj["secure"] = secure;
+  }
+
+  if (doc.overflowed()) {
+    WiFi.scanDelete();
+    scanning = false;
+    server.send(503, "application/json", "{\"error\":\"scan_results_too_large\"}");
+    return;
   }
 
   // Guardar en cache
@@ -1349,7 +1358,7 @@ bool AyresWiFiManager::connectToWiFi() {
     }
     AWM_sleep_ms(250);
     // Alimentar watchdog durante el intento de conexión inicial
-    esp_task_wdt_reset();
+    AWM_feedWatchdog();
   }
 
   AYLOG_W("⏱️ Tiempo agotado. No se pudo conectar.");
@@ -1541,7 +1550,7 @@ void AyresWiFiManager::reintentarConexionSiNecesario() {
       }
     }
     // Si no conecta ni da timeout, seguimos en WAITING (retorna al loop)
-    esp_task_wdt_reset();
+    AWM_feedWatchdog();
     break;
   }
 }
@@ -1864,7 +1873,7 @@ void AyresWiFiManager::eraseJsonInDir(const char *dirPath,
       AWM_LOGW("No se pudo borrar JSON: %s", path.c_str());
     }
 
-    esp_task_wdt_reset();
+    AWM_feedWatchdog();
     if (_busyCallback)
       _busyCallback();
   }

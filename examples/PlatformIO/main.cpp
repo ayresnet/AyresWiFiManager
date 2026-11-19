@@ -67,7 +67,8 @@ void setup() {
   wifiManager.enableButtonPortal(true);
 
   // true encrypts /wifi.json; false stores it as plain text.
-  wifiManager.setCredentialEncryption(true, "AyresNet2020WiFi");
+  // To encrypt credentials, provide a unique secret outside the public source.
+  // wifiManager.setCredentialEncryption(true, YOUR_SECRET_16_BYTE_KEY);
 
   // Load credentials, initialize Wi-Fi, and start the manager.
   wifiManager.begin();
